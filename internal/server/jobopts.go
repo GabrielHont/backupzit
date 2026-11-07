@@ -15,6 +15,11 @@ import (
 
 // JobOptions are optional settings of a job.
 type JobOptions struct {
+	// Nil preserves the agent default (VSS enabled on Windows).
+	VSS *bool `json:"vss,omitempty"`
+	// ImageDisks selects whole Windows disks; nil uses ImageDisk (including
+	// its existing AllDisks sentinel). Requires the extended-options agent.
+	ImageDisks []int `json:"image_disks,omitempty"`
 	// LimitMBps limits the upload speed to the storage (MB/s; 0 = no
 	// limit), between LimitFrom and LimitTo o'clock on the agent (equal:
 	// all day).
@@ -148,6 +153,10 @@ func (o JobOptions) LimitText() string {
 
 // apiOptions are the job options an agent needs for a run.
 func (o JobOptions) apply(ar *api.Run, kind string) {
+	ar.VSS = o.VSS
+	if kind == api.KindImageBackup {
+		ar.ImageDisks = o.ImageDisks
+	}
 	if o.LimitMBps > 0 {
 		ar.Limit = &api.SpeedLimit{BytesPerSec: int64(o.LimitMBps) << 20, FromHour: o.LimitFrom, ToHour: o.LimitTo}
 	}
@@ -328,6 +337,7 @@ func optionsFromForm(r *http.Request, old JobOptions, canCommands bool) JobOptio
 		o.M365ExcludeUsers, o.M365ExcludeSites = old.M365ExcludeUsers, old.M365ExcludeSites
 	}
 	o.HVCluster = old.HVCluster
+	o.VSS, o.ImageDisks = old.VSS, old.ImageDisks
 	return o
 }
 
@@ -345,6 +355,7 @@ func retentionFromForm(r *http.Request) repo.RetentionPolicy {
 		KeepDaily:   atoiDefault(r.FormValue("keep_daily")),
 		KeepWeekly:  atoiDefault(r.FormValue("keep_weekly")),
 		KeepMonthly: atoiDefault(r.FormValue("keep_monthly")),
+		KeepYearly:  atoiDefault(r.FormValue("keep_yearly")),
 	}
 }
 
@@ -370,6 +381,9 @@ func (s *Server) handleJobEdit(w http.ResponseWriter, r *http.Request, _ string)
 	}
 	j := old
 	j.Name, j.Schedule, j.Retention = r.FormValue("name"), sched, retentionFromForm(r)
+	if !r.Form.Has("keep_yearly") {
+		j.Retention.KeepYearly = old.Retention.KeepYearly
+	}
 	j.Options = optionsFromForm(r, old.Options, canCommands(r))
 	switch old.Kind {
 	case JobFiles:

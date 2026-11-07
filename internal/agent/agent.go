@@ -543,7 +543,14 @@ func (a *Agent) backup(ctx context.Context, run api.Run) api.RunResult {
 	if len(paths) == 0 {
 		return api.RunResult{Status: api.StatusFailed, Message: "Nothing to back up: no folder or file matches " + strings.Join(unmatched, ", ")}
 	}
-	return a.backupPaths(ctx, run, a.withPVEConfigCopy(paths), a.VSS, note)
+	return a.backupPaths(ctx, run, a.withPVEConfigCopy(paths), a.runVSS(run), note)
+}
+
+func (a *Agent) runVSS(run api.Run) bool {
+	if run.VSS != nil {
+		return *run.VSS
+	}
+	return a.VSS
 }
 
 // backupPaths backs up local paths (or those of a mounted NAS share). note

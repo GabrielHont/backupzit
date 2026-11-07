@@ -22,7 +22,8 @@ const BlockSize = 1 << 20
 
 // BackupOptions configure an image backup.
 type BackupOptions struct {
-	Disk int
+	Disk  int
+	Disks []int
 	// Partitions selects partition numbers to back up; nil means all.
 	Partitions []int
 	// VSS reads NTFS/ReFS volumes from shadow copies (recommended).
@@ -57,7 +58,15 @@ func Backup(ctx context.Context, r *repo.Repository, opts BackupOptions) (*repo.
 		return nil, err
 	}
 	var disks []*Disk
-	if opts.Disk == AllDisks {
+	if len(opts.Disks) > 0 {
+		disks, err = selectDisks(all, opts.Disks)
+		if err != nil {
+			return nil, err
+		}
+		if len(opts.Partitions) > 0 {
+			return nil, errors.New("partitions can only be chosen for a single disk")
+		}
+	} else if opts.Disk == AllDisks {
 		for i := range all {
 			if InAllDisks(all[i]) {
 				disks = append(disks, &all[i])

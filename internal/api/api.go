@@ -202,6 +202,8 @@ type Run struct {
 
 	// Image backup: disk number and partitions (empty = whole disk).
 	ImageDisk       int   `json:"image_disk,omitempty"`
+	ImageDisks      []int `json:"image_disks,omitempty"`
+	VSS             *bool `json:"vss,omitempty"`
 	ImagePartitions []int `json:"image_partitions,omitempty"`
 
 	// Image restore: disk to overwrite, and which disk image of the backup

@@ -16,11 +16,12 @@ type RetentionPolicy struct {
 	KeepDaily   int `json:"keep_daily,omitempty"`
 	KeepWeekly  int `json:"keep_weekly,omitempty"`
 	KeepMonthly int `json:"keep_monthly,omitempty"`
+	KeepYearly  int `json:"keep_yearly,omitempty"`
 }
 
 // Empty reports whether the policy keeps everything.
 func (p RetentionPolicy) Empty() bool {
-	return p.KeepLast <= 0 && p.KeepDaily <= 0 && p.KeepWeekly <= 0 && p.KeepMonthly <= 0
+	return p.KeepLast <= 0 && p.KeepDaily <= 0 && p.KeepWeekly <= 0 && p.KeepMonthly <= 0 && p.KeepYearly <= 0
 }
 
 func (p RetentionPolicy) String() string {
@@ -37,6 +38,7 @@ func (p RetentionPolicy) String() string {
 	add(p.KeepDaily, "daily")
 	add(p.KeepWeekly, "weekly")
 	add(p.KeepMonthly, "monthly")
+	add(p.KeepYearly, "yearly")
 	out := "keep " + s[0]
 	for i := 1; i < len(s); i++ {
 		if i == len(s)-1 {
@@ -77,6 +79,7 @@ func ApplyPolicy(sns []*Snapshot, p RetentionPolicy, loc *time.Location) (keep, 
 	bucketRule(p.KeepDaily, func(t time.Time) string { return t.Format("2006-01-02") })
 	bucketRule(p.KeepWeekly, func(t time.Time) string { y, w := t.ISOWeek(); return fmt.Sprintf("%d-%02d", y, w) })
 	bucketRule(p.KeepMonthly, func(t time.Time) string { return t.Format("2006-01") })
+	bucketRule(p.KeepYearly, func(t time.Time) string { return t.Format("2006") })
 
 	for _, sn := range sorted {
 		if kept[sn] {

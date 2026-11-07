@@ -19,6 +19,7 @@ func ListDisks() ([]Disk, error) { return nil, ErrUnsupported }
 // BackupOptions configure an image backup.
 type BackupOptions struct {
 	Disk       int
+	Disks      []int
 	Partitions []int
 	VSS        bool
 	VSSTimeout time.Duration

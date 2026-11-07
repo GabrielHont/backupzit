@@ -43,8 +43,9 @@ func (a *Agent) imageBackup(ctx context.Context, run api.Run) api.RunResult {
 	var lastLog time.Time
 	sn, err := imaging.Backup(ctx, r, imaging.BackupOptions{
 		Disk:       run.ImageDisk,
+		Disks:      run.ImageDisks,
 		Partitions: run.ImagePartitions,
-		VSS:        a.VSS,
+		VSS:        a.runVSS(run),
 		Version:    a.version,
 		Tags:       []string{fmt.Sprintf("run:%d", run.ID), jobTag(run.JobID)},
 		Progress: func(done, total uint64) {

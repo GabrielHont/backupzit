@@ -207,8 +207,7 @@ func (s *Server) needsApproval(w http.ResponseWriter, r *http.Request, back, act
 				l.T("Another user must approve or reject it in the console under Approvals:") + "\n" + s.ConsoleURL() + "/approvals\n\n" +
 				l.T("The request expires after 7 days.")
 	})
-	redirectMsg(w, r, back, "Waiting for approval: another user must approve this change under Approvals.")
-	return true
+	return true, nil
 }
 
 // executeApproval carries out an approved change.
@@ -387,5 +386,5 @@ func shorterRetention(old, cur repo.RetentionPolicy) bool {
 	case old.Empty():
 		return true
 	}
-	return cur.KeepLast < old.KeepLast || cur.KeepDaily < old.KeepDaily || cur.KeepWeekly < old.KeepWeekly || cur.KeepMonthly < old.KeepMonthly
+	return cur.KeepLast < old.KeepLast || cur.KeepDaily < old.KeepDaily || cur.KeepWeekly < old.KeepWeekly || cur.KeepMonthly < old.KeepMonthly || cur.KeepYearly < old.KeepYearly
 }
