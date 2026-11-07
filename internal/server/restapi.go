@@ -449,6 +449,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	s.registerAPIJobs(mux)
 	s.registerAPITargets(mux)
 	s.registerAPIRecovery(mux)
+	s.registerAPIDocs(mux)
 }
 
 // ---- token management pages (My account)

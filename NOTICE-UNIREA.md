@@ -18,3 +18,5 @@ Changes made by Unirea Cloud, starting 7 November 2026:
   restoration; add stable run cursors with filters applied before the limit.
 - Add one-shot CLI API-token provisioning and initial password files, with
   token-only stdout and audit entries that exclude the token secret.
+- Document all public routes in an embedded OpenAPI 3.1 contract and update
+  the English API guide, with contract-to-route and response-shape tests.

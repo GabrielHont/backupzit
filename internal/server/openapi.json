@@ -1,0 +1,3300 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "BackupZit public API (Unirea fork)",
+    "version": "1.0.0",
+    "description": "One organization per console. Authenticate every request with Authorization: Bearer bzt_.... The token effective role is capped by its enabled owner current role. All errors use an English error string; mutating requests use application/json. No-store responses. Enrollment agent protocol and browser-session routes are separate APIs.",
+    "license": {
+      "name": "GNU Affero General Public License v3.0",
+      "url": "https://www.gnu.org/licenses/agpl-3.0.html"
+    }
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/agents": {
+      "get": {
+        "operationId": "listAgents",
+        "summary": "List agents",
+        "description": "List agents",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Agent"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}": {
+      "get": {
+        "operationId": "getAgent",
+        "summary": "Get an agent",
+        "description": "Get an agent",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/agents/{id}/log": {
+      "post": {
+        "operationId": "requestAgentLog",
+        "summary": "Ask an agent to send its log",
+        "description": "Asynchronous; requires agent 0.38.0 or newer. Read GET /runs/{id}/log once delivered.",
+        "x-minimum-role": "operator",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "202": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunID"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/enrollment-tokens": {
+      "get": {
+        "operationId": "listEnrollmentTokens",
+        "summary": "List enrollment token metadata",
+        "description": "Includes expired, exhausted and revoked tokens, without secrets or BZ1 codes.",
+        "x-minimum-role": "operator",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EnrollmentToken"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createEnrollmentToken",
+        "summary": "Create an enrollment code",
+        "description": "Use the BZ1 code with the existing agent installer/enrollment protocol. A valid pinned TLS certificate is required. Token use and the shared agent cap are checked atomically when an agent enrolls.",
+        "x-minimum-role": "operator",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnrollmentCreated"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnrollmentCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/enrollment-tokens/{id}": {
+      "delete": {
+        "operationId": "revokeEnrollmentToken",
+        "summary": "Revoke an enrollment token",
+        "description": "Revocation blocks new enrollment and preserves metadata/agent provenance. Does not disconnect already enrolled agents; a second revocation returns 404.",
+        "x-minimum-role": "operator",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "204": {
+            "description": "Success."
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/jobs": {
+      "get": {
+        "operationId": "listJobs",
+        "summary": "List all jobs",
+        "description": "List all jobs",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Job"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createJob",
+        "summary": "Create a file or Windows image job",
+        "description": "Create a file or Windows image job",
+        "x-minimum-role": "operator",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs/{id}": {
+      "get": {
+        "operationId": "getJob",
+        "summary": "Get a job",
+        "description": "Get a job",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "patchJob",
+        "summary": "Change a job",
+        "description": "Change a job",
+        "x-minimum-role": "operator",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobPatch"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteJob",
+        "summary": "Delete a job configuration",
+        "description": "Keeps existing backups. With four-eyes approval enabled, records a pending request and returns 409. A second user decides in the console. Group members cannot be changed individually.",
+        "x-minimum-role": "operator",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "204": {
+            "description": "Success."
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/jobs/{id}/disable": {
+      "post": {
+        "operationId": "disableJob",
+        "summary": "Disable scheduling",
+        "description": "Group members must be changed through the console group. Disabling with four-eyes approval enabled returns 409; request that change in the console, as before.",
+        "x-minimum-role": "operator",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "202": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEnabled"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/jobs/{id}/enable": {
+      "post": {
+        "operationId": "enableJob",
+        "summary": "Enable scheduling",
+        "description": "Group members must be changed through the console group. Disabling with four-eyes approval enabled returns 409; request that change in the console, as before.",
+        "x-minimum-role": "operator",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "202": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEnabled"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/jobs/{id}/run": {
+      "post": {
+        "operationId": "runJob",
+        "summary": "Start a backup",
+        "description": "Start a backup",
+        "x-minimum-role": "restore",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "202": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunID"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/jobs/{id}/test": {
+      "post": {
+        "operationId": "testJob",
+        "summary": "Start a restore test",
+        "description": "Start a restore test",
+        "x-minimum-role": "restore",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "202": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunID"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/limits": {
+      "get": {
+        "operationId": "getLimits",
+        "summary": "Read the console agent cap",
+        "description": "Read the console agent cap",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Limits"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "setLimits",
+        "summary": "Set the console agent cap",
+        "description": "Set the console agent cap",
+        "x-minimum-role": "admin",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Limits"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Limits"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "getMetrics",
+        "summary": "Read Prometheus metrics",
+        "description": "Prometheus text exposition format 0.0.4. Uses the same Bearer token authentication as JSON routes.",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "backupzit_agents{state=\"online\"} 1\n"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "getOpenAPI",
+        "summary": "Read this OpenAPI contract",
+        "description": "Read this OpenAPI contract",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAPI"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/report": {
+      "get": {
+        "operationId": "getReport",
+        "summary": "Get a JSON backup report",
+        "description": "Get a JSON backup report",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Report"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "today",
+                "yesterday",
+                "last7",
+                "last30",
+                "last90",
+                "thisweek",
+                "lastweek",
+                "thismonth",
+                "lastmonth",
+                "custom"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "YYYY-MM-DD; required with period=custom.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "YYYY-MM-DD; required with period=custom.",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "agent",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "job",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/runs": {
+      "get": {
+        "operationId": "listRuns",
+        "summary": "List runs with a stable cursor",
+        "description": "Descending immutable run IDs. Retains the array response and all existing filters; concurrent insertions do not repeat or displace older pages. A missing cursor ID is also a valid exclusive numeric boundary.",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Run"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "job",
+            "in": "query",
+            "required": false,
+            "description": "Filter by job ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "agent",
+            "in": "query",
+            "required": false,
+            "description": "Filter by agent ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Filter before applying the page limit.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Invalid, nonpositive or over-1000 values retain the existing fallback of 100.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 100,
+              "maximum": 1000,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "description": "Exclusive run ID cursor. Use the last id of the previous page.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/runs/{id}": {
+      "get": {
+        "operationId": "getRun",
+        "summary": "Get a run",
+        "description": "Get a run",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/runs/{id}/cancel": {
+      "post": {
+        "operationId": "cancelRun",
+        "summary": "Cancel or request stopping a run",
+        "description": "Cancel or request stopping a run",
+        "x-minimum-role": "restore",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "202": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cancellation"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/runs/{id}/download": {
+      "get": {
+        "operationId": "downloadRunFile",
+        "summary": "Stream a file or ZIP archive",
+        "description": "A single file is streamed unchanged; a folder is streamed as ZIP. Same storage/backup limitations as /files. A storage/read failure after response headers aborts the connection, without appending JSON. Download is audited.",
+        "x-minimum-role": "restore",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "description": "File or folder snapshot path. / downloads the whole backup.",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ]
+      }
+    },
+    "/runs/{id}/files": {
+      "get": {
+        "operationId": "listRunFiles",
+        "summary": "List files in a backup folder",
+        "description": "Same file-snapshot browser as the console. File and Linux system backups on console-accessible network storage. Local/USB storage, expired runs, images and SSH-key-only storage return 409, matching UI limitations.",
+        "x-minimum-role": "restore",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FileEntry"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "description": "Snapshot path with forward slashes; / is the root. No parent traversal or NUL.",
+            "schema": {
+              "type": "string",
+              "default": "/"
+            }
+          }
+        ]
+      }
+    },
+    "/runs/{id}/log": {
+      "get": {
+        "operationId": "getAgentLog",
+        "summary": "Get a delivered agent log",
+        "description": "Only agent-log runs. Returns 404 before the agent delivers the log.",
+        "x-minimum-role": "operator",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentLog"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/runs/{id}/restore": {
+      "post": {
+        "operationId": "restoreRunFiles",
+        "summary": "Queue file restoration on an agent",
+        "description": "Returns the created run in the GET /runs/{id} shape. Supports file/system backups and file copies through the existing UI restore operation. Expired snapshots are rejected. A queued restore is asynchronous; monitor its run. The target agent needs access to the original repository.",
+        "x-minimum-role": "restore",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "202": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "operationId": "getStatus",
+        "summary": "Console health",
+        "description": "Console health",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Status"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/storage": {
+      "get": {
+        "operationId": "getStorageUsage",
+        "summary": "Read storage usage and trends",
+        "description": "Read storage usage and trends",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StorageUsage"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/targets": {
+      "get": {
+        "operationId": "listTargets",
+        "summary": "List storage targets without credentials",
+        "description": "List storage targets without credentials",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Target"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createS3Target",
+        "summary": "Create encrypted S3 storage",
+        "description": "Create encrypted S3 storage",
+        "x-minimum-role": "admin",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TargetCreated"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/S3TargetCreate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/targets/{id}": {
+      "delete": {
+        "operationId": "deleteTarget",
+        "summary": "Delete an unused storage target",
+        "description": "Rejects targets used by jobs. Keeps stored backups. With four-eyes approval enabled, records a pending request and returns 409 for a second user to decide in the console.",
+        "x-minimum-role": "admin",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "204": {
+            "description": "Success."
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "bzt_..."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "Status": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "agents": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "agents_online": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "jobs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "storage_targets": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "runs_24h": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failed_24h": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "warnings_24h": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "active_runs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "suspicious_unreviewed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "version",
+          "agents",
+          "agents_online",
+          "jobs",
+          "storage_targets",
+          "runs_24h",
+          "failed_24h",
+          "warnings_24h",
+          "active_runs",
+          "suspicious_unreviewed",
+          "ok"
+        ],
+        "additionalProperties": false
+      },
+      "Agent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "os": {
+            "type": "string",
+            "description": "Operating system and architecture joined with /."
+          },
+          "version": {
+            "type": "string"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "last_seen": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "recovery": {
+            "type": "boolean"
+          },
+          "local_ips": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "seen_from": {
+            "type": "string"
+          },
+          "enrolled": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "max_runs": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "enrollment_token_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "id",
+          "hostname",
+          "os",
+          "version",
+          "online",
+          "last_seen",
+          "recovery",
+          "local_ips",
+          "seen_from",
+          "enrolled",
+          "max_runs"
+        ],
+        "additionalProperties": false
+      },
+      "Retention": {
+        "type": "object",
+        "properties": {
+          "keep_last": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 100000,
+            "default": 0
+          },
+          "keep_daily": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 100000,
+            "default": 0
+          },
+          "keep_weekly": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 100000,
+            "default": 0
+          },
+          "keep_monthly": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 100000,
+            "default": 0
+          },
+          "keep_yearly": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 100000,
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "description": "Union of retention rules; all zero keeps everything. Yearly retention requires the fork agent with extended job options (0.47.4 or newer)."
+      },
+      "JobOptions": {
+        "type": "object",
+        "properties": {
+          "vss": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Windows only. Omit/null uses the agent default; true/false overrides it. Requires an updated fork agent."
+          },
+          "image_disks": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "uniqueItems": true,
+            "maxItems": 128,
+            "description": "Image jobs: explicit whole-disk selection; omit/null uses image_disk. Requires an updated fork agent."
+          },
+          "limit_mbps": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "limit_from": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 23
+          },
+          "limit_to": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 24
+          },
+          "pre_command": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "Only admin may change agent commands."
+          },
+          "post_command": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "Only admin may change agent commands."
+          },
+          "command_minutes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 1440
+          },
+          "compression": {
+            "type": "string",
+            "enum": [
+              "",
+              "off",
+              "fast",
+              "max"
+            ]
+          },
+          "max_hours": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 720
+          },
+          "rpo_hours": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 8760
+          },
+          "window": {
+            "type": "boolean"
+          },
+          "window_from": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 23
+          },
+          "window_to": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 23
+          }
+        },
+        "additionalProperties": false
+      },
+      "Job": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Existing jobs of all kinds are returned; mutations support files and image."
+          },
+          "agent_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "target": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "schedule": {
+            "type": "string",
+            "description": "Human-readable schedule. Use raw_schedule to read the stored value."
+          },
+          "raw_schedule": {
+            "type": "string",
+            "description": "Stored schedule: empty, cron expression, or an encoded Schedule JSON string."
+          },
+          "next_run": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "last_status": {
+            "type": "string"
+          },
+          "last_finished": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excludes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_job_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "image_disk": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": -1
+          },
+          "image_partitions": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "retention": {
+            "$ref": "#/components/schemas/Retention"
+          },
+          "options": {
+            "$ref": "#/components/schemas/JobOptions"
+          },
+          "rpo_hours": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "rpo_met": {
+            "type": "boolean"
+          },
+          "last_good_backup": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "agent_id",
+          "agent",
+          "target_id",
+          "target",
+          "enabled",
+          "schedule",
+          "raw_schedule",
+          "next_run",
+          "last_status",
+          "last_finished",
+          "excludes",
+          "retention",
+          "options"
+        ],
+        "additionalProperties": false
+      },
+      "JobCreate": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "files",
+              "image"
+            ],
+            "default": "files"
+          },
+          "agent_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "target_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "paths": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "excludes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "schedule": {
+            "type": "string",
+            "default": "",
+            "description": "Five-field cron expression, empty for manual, or a stored Schedule JSON string."
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "image_disk": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": -1,
+            "description": "-1 means all internal disks; non-negative is one disk. Alternatively set options.image_disks."
+          },
+          "image_partitions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          "retention": {
+            "$ref": "#/components/schemas/Retention"
+          },
+          "options": {
+            "$ref": "#/components/schemas/JobOptions"
+          }
+        },
+        "required": [
+          "agent_id",
+          "target_id",
+          "name"
+        ],
+        "additionalProperties": false,
+        "description": "Files jobs require paths. Image jobs require a Windows agent and image_disk or options.image_disks. Without retention, defaults are keep_last=3, keep_daily=7, keep_weekly=4, keep_monthly=6. An explicit retention object starts from zero."
+      },
+      "JobPatch": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "files",
+              "image"
+            ],
+            "default": "files"
+          },
+          "agent_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "target_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "paths": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "excludes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "schedule": {
+            "type": "string",
+            "default": "",
+            "description": "Five-field cron expression, empty for manual, or a stored Schedule JSON string."
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "image_disk": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": -1,
+            "description": "-1 means all internal disks; non-negative is one disk. Alternatively set options.image_disks."
+          },
+          "image_partitions": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          "retention": {
+            "$ref": "#/components/schemas/Retention"
+          },
+          "options": {
+            "$ref": "#/components/schemas/JobOptions"
+          }
+        },
+        "additionalProperties": false,
+        "description": "Merge only the supplied fields, including nested options/retention. Kind, agent_id, target_id, image_disk and image_partitions are immutable, as in the UI. Use enable/disable to change enabled. Group members must be changed through the console group. Shorter retention returns 409 and creates an approval; other safe changes are saved immediately."
+      },
+      "Run": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "success",
+              "warning",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "trigger": {
+            "type": "string"
+          },
+          "agent_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "job_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "job": {
+            "type": "string"
+          },
+          "queued_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "duration_s": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "snapshot": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "stats": {},
+          "suspicious": {
+            "type": "string"
+          },
+          "expired": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "trigger",
+          "agent_id",
+          "agent",
+          "job_id",
+          "job",
+          "queued_at",
+          "started_at",
+          "finished_at",
+          "duration_s",
+          "expired"
+        ],
+        "additionalProperties": false
+      },
+      "RunID": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "run_id"
+        ],
+        "additionalProperties": false
+      },
+      "Cancellation": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "cancelled",
+              "stopping"
+            ]
+          }
+        },
+        "required": [
+          "run_id",
+          "state"
+        ],
+        "additionalProperties": false
+      },
+      "JobEnabled": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "enabled"
+        ],
+        "additionalProperties": false
+      },
+      "AgentLog": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "log": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "agent",
+          "log"
+        ],
+        "additionalProperties": false
+      },
+      "Target": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "encrypted": {
+            "type": "boolean"
+          },
+          "immutable_days": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "location",
+          "encrypted",
+          "immutable_days"
+        ],
+        "additionalProperties": false
+      },
+      "TargetCreated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "encrypted": {
+            "type": "boolean"
+          },
+          "immutable_days": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "recoveryKey": {
+            "type": "string",
+            "description": "Shown once in this creation response. Store it safely; never returned by GET /targets."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "location",
+          "encrypted",
+          "immutable_days",
+          "recoveryKey"
+        ],
+        "additionalProperties": false
+      },
+      "S3TargetCreate": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "s3"
+            ],
+            "default": "s3"
+          },
+          "endpoint": {
+            "type": "string",
+            "description": "Endpoint host[:port], without a scheme."
+          },
+          "bucket": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string",
+            "default": ""
+          },
+          "region": {
+            "type": "string",
+            "default": ""
+          },
+          "accessKey": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "secretKey": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "tls": {
+            "type": "boolean",
+            "default": true
+          },
+          "lockDays": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 3650,
+            "default": 0
+          }
+        },
+        "required": [
+          "name",
+          "endpoint",
+          "bucket",
+          "accessKey",
+          "secretKey"
+        ],
+        "additionalProperties": false,
+        "description": "Creates encrypted storage and generates a recovery key, using the UI mutation. Creation does not test connectivity or create the S3 bucket. Configure Object Lock on the bucket beforehand when lockDays>0."
+      },
+      "EnrollmentToken": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maxUses": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "uses": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "label": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revokedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "expiresAt",
+          "maxUses",
+          "uses",
+          "label",
+          "createdAt",
+          "revokedAt"
+        ],
+        "additionalProperties": false
+      },
+      "EnrollmentCreated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maxUses": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "uses": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "label": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revokedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^BZ1-",
+            "description": "Shown once; includes server URL, secret enrollment token and the pinned certificate fingerprint."
+          }
+        },
+        "required": [
+          "id",
+          "expiresAt",
+          "maxUses",
+          "uses",
+          "label",
+          "createdAt",
+          "revokedAt",
+          "code"
+        ],
+        "additionalProperties": false
+      },
+      "EnrollmentCreate": {
+        "type": "object",
+        "properties": {
+          "maxUses": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1,
+            "default": 1
+          },
+          "ttlHours": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 8760,
+            "default": 24
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 255,
+            "default": ""
+          }
+        },
+        "additionalProperties": false,
+        "description": "Omitted maxUses defaults to 1; explicit null is unlimited. The legacy UI still issues unlimited tokens."
+      },
+      "Limits": {
+        "type": "object",
+        "properties": {
+          "maxAgents": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0,
+            "description": "null is unlimited; zero prevents new enrollment. Counts all non-removed agents, including recovery media. Reducing the limit does not remove existing agents."
+          }
+        },
+        "required": [
+          "maxAgents"
+        ],
+        "additionalProperties": false
+      },
+      "FileEntry": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "Snapshot path for subsequent browse/download/restore requests, e.g. /C/Users or /srv/data."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "file",
+              "dir",
+              "symlink",
+              "dev",
+              "fifo"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "modTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "type",
+          "size",
+          "modTime"
+        ],
+        "additionalProperties": false
+      },
+      "RestoreTarget": {
+        "oneOf": [
+          {
+            "type": "string",
+            "const": "original"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "directory": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "directory"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "RestoreCreate": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "maxItems": 10000,
+            "description": "Snapshot paths returned by /files. Use / to restore the whole backup. Converted to the source agent path syntax; local-storage restores need no console storage access."
+          },
+          "target": {
+            "$ref": "#/components/schemas/RestoreTarget"
+          },
+          "agent_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "Defaults to the source run agent. May select another existing agent, as in the UI."
+          },
+          "verify": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "paths",
+          "target"
+        ],
+        "additionalProperties": false
+      },
+      "StorageUsage": {
+        "type": "object",
+        "properties": {
+          "target_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "used_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "repositories": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "free_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "used_percent": {
+            "type": "number"
+          },
+          "growth_bytes_per_day": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "full_in_days": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "target_id",
+          "name",
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "ReportJob": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "job": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "runs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "success": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "warning": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "success_rate": {
+            "type": "number"
+          },
+          "last_status": {
+            "type": "string"
+          },
+          "last_good_backup": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "uploaded_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "restore_test": {
+            "type": "string"
+          },
+          "restore_test_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "job_id",
+          "job",
+          "agent",
+          "runs",
+          "success",
+          "warning",
+          "failed",
+          "success_rate",
+          "last_status",
+          "last_good_backup",
+          "uploaded_bytes",
+          "restore_test",
+          "restore_test_at"
+        ],
+        "additionalProperties": false
+      },
+      "Report": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "label": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "backups": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "success": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "warning": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "success_rate": {
+            "type": "number"
+          },
+          "read_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "uploaded_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "restores": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "restore_tests": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "restore_tests_failed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "suspicious": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportJob"
+            }
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "label",
+          "scope",
+          "backups",
+          "success",
+          "warning",
+          "failed",
+          "success_rate",
+          "read_bytes",
+          "uploaded_bytes",
+          "restores",
+          "restore_tests",
+          "restore_tests_failed",
+          "suspicious",
+          "jobs"
+        ],
+        "additionalProperties": false
+      },
+      "OpenAPI": {
+        "type": "object",
+        "properties": {
+          "openapi": {
+            "type": "string"
+          },
+          "info": {
+            "type": "object"
+          },
+          "paths": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "openapi",
+          "info",
+          "paths"
+        ]
+      }
+    },
+    "responses": {
+      "Error400": {
+        "description": "Invalid request.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error401": {
+        "description": "Missing, invalid or expired API token.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error403": {
+        "description": "The effective role does not permit this action.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error404": {
+        "description": "Object not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error409": {
+        "description": "Conflict, unsupported backup or approval required. Read error for details.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error415": {
+        "description": "Content-Type must be application/json.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error429": {
+        "description": "Too many failed sign-ins. Retry-After indicates seconds to wait.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error500": {
+        "description": "Internal error.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -39,6 +39,9 @@ func TestAPIEnrollmentLimits(t *testing.T) {
 	c := newClient(t, e)
 	c.login("admin", "admin-pass-123")
 	admin, viewer := apiToken(t, c, "admin"), apiToken(t, c, "viewer")
+	if code, b := apiJSONCall(t, e, viewer, "GET", "/api/v1/openapi.json", ""); code != 200 || !strings.Contains(b, `"openapi":"3.1.0"`) {
+		t.Fatalf("OpenAPI: %d %s", code, b)
+	}
 	if code, _ := apiJSONCall(t, e, viewer, "PUT", "/api/v1/limits", `{"maxAgents":1}`); code != 403 {
 		t.Fatalf("viewer set limit: %d", code)
 	}
