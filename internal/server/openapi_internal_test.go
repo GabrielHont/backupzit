@@ -27,12 +27,18 @@ func TestOpenAPIContract(t *testing.T) {
 				t.Errorf("duplicate operation ID %s", id)
 			}
 			ids[id] = true
-			if _, ok := roleRank[op["x-minimum-role"].(string)]; !ok {
-				t.Errorf("invalid role for %s %s", method, p)
-			}
-			responses := op["responses"].(map[string]any)
-			if responses["401"] == nil || responses["403"] == nil {
-				t.Errorf("missing auth errors: %s %s", method, p)
+			if p == "/agent/{file}" {
+				if method != "get" || op["x-minimum-role"] != "public" || !reflect.DeepEqual(op["security"], []any{}) || !reflect.DeepEqual(op["servers"], []any{map[string]any{"url": "/"}}) {
+					t.Errorf("public installer route must be unauthenticated at the console root")
+				}
+			} else {
+				if _, ok := roleRank[op["x-minimum-role"].(string)]; !ok {
+					t.Errorf("invalid role for %s %s", method, p)
+				}
+				responses := op["responses"].(map[string]any)
+				if responses["401"] == nil || responses["403"] == nil {
+					t.Errorf("missing auth errors: %s %s", method, p)
+				}
 			}
 		}
 	}
@@ -40,6 +46,7 @@ func TestOpenAPIContract(t *testing.T) {
 	// actions are registered in a loop, all other routes use literals.
 	routes := map[string]bool{"post /jobs/{id}/enable": true, "post /jobs/{id}/disable": true}
 	pattern := regexp.MustCompile(`"(GET|POST|PUT|PATCH|DELETE) /api/v1([^"\n]+)"`)
+	publicPattern := regexp.MustCompile(`"(GET) (/agent/\{file\})"`)
 	files, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +63,9 @@ func TestOpenAPIContract(t *testing.T) {
 			if strings.HasSuffix(m[2], "/") {
 				continue
 			}
+			routes[strings.ToLower(m[1])+" "+m[2]] = true
+		}
+		for _, m := range publicPattern.FindAllStringSubmatch(string(b), -1) {
 			routes[strings.ToLower(m[1])+" "+m[2]] = true
 		}
 	}
@@ -102,7 +112,7 @@ func TestOpenAPIContract(t *testing.T) {
 	}
 	walk(doc)
 	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
-	for name, typ := range map[string]reflect.Type{"Agent": reflect.TypeFor[apiAgent](), "Job": reflect.TypeFor[apiJob](), "Run": reflect.TypeFor[apiRun](), "EnrollmentToken": reflect.TypeFor[EnrollmentToken](), "Limits": reflect.TypeFor[ConsoleLimits](), "JobOptions": reflect.TypeFor[apiJobOptions](), "FileEntry": reflect.TypeFor[apiFileEntry]()} {
+	for name, typ := range map[string]reflect.Type{"Agent": reflect.TypeFor[apiAgent](), "AgentPackage": reflect.TypeFor[apiAgentPackage](), "AgentRemoval": reflect.TypeFor[apiAgentRemoval](), "Job": reflect.TypeFor[apiJob](), "Run": reflect.TypeFor[apiRun](), "EnrollmentToken": reflect.TypeFor[EnrollmentToken](), "Limits": reflect.TypeFor[ConsoleLimits](), "JobOptions": reflect.TypeFor[apiJobOptions](), "FileEntry": reflect.TypeFor[apiFileEntry]()} {
 		schema := schemas[name].(map[string]any)
 		properties := schema["properties"].(map[string]any)
 		required := map[string]bool{}

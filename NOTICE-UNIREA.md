@@ -22,3 +22,9 @@ Changes made by Unirea Cloud, starting 7 November 2026:
   the English API guide, with contract-to-route and response-shape tests.
 - Negotiate extended job support explicitly through agent capabilities; escape
   S3 prefixes and display yearly-only retention safely in the console.
+- Expose an authenticated agent installer catalog and allowlisted public
+  downloads with real, cached SHA-256 checksums and safe directory resolution.
+- Add persistent agent display names and API removal sharing UI approvals and
+  audit, retaining backups and history even without registered repositories.
+- Verify stable agent/run IDs and readable runs after job removal, and document
+  unattended Windows MSI and Linux DEB/RPM installation with checksum checks.

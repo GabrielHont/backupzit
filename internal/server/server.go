@@ -49,7 +49,7 @@ type Server struct {
 	// deploys are agent installations started from the console.
 	deploys    *deployer
 	deployOnce sync.Once
-	// shaCache holds SHA-256 sums of installers offered as agent updates.
+	// shaCache holds SHA-256 sums of installers offered by the console.
 	shaCache sync.Map
 	guard    *loginGuard
 	web      *webTLS

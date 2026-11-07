@@ -81,7 +81,7 @@ func (s *Store) softRemoveAgent(ctx context.Context, id int64) error {
 	for _, q := range []string{
 		`UPDATE runs r SET job_name=j.name FROM jobs j WHERE r.job_id=j.id AND r.agent_id=$1`,
 		`DELETE FROM runs WHERE agent_id=$1 AND status='queued'`,
-		`UPDATE runs SET status='failed', message='The agent was removed.', finished_at=now() WHERE agent_id=$1 AND status='running'`,
+		`UPDATE runs SET status='failed', message='The agent was removed.', finished_at=now() WHERE agent_id=$1 AND status IN ('running','stopping')`,
 		`UPDATE vmware_hosts SET proxy_agent_id=NULL WHERE proxy_agent_id=$1`,
 		`DELETE FROM jobs WHERE agent_id=$1`,
 		`DELETE FROM agent_removals WHERE agent_id=$1`,
@@ -321,15 +321,32 @@ func (s *Server) handleAgentDelete(w http.ResponseWriter, r *http.Request, user 
 			return
 		}
 	}
-	if s.needsApproval(w, r, "/agents", "agent.delete", id, a.Hostname, o) {
+	msg, err := s.removeAgent(r, a, o)
+	if errors.Is(err, errApprovalPending) {
+		redirectMsg(w, r, "/agents", l.T(err.Error()))
 		return
 	}
-	msg, err := s.startAgentRemoval(r.Context(), a, o, user, s.guard.ClientIP(r))
 	if err != nil {
 		redirectErr(w, r, "/agents", err)
 		return
 	}
 	redirectMsg(w, r, "/agents", l.T(msg))
+}
+
+// removeAgent shares UI approval and audit identity rules with the public API.
+// Destructive UI choices are validated by handleAgentDelete before this call;
+// the API only uses keep, without uninstalling the software.
+func (s *Server) removeAgent(r *http.Request, a Agent, o removalOpts) (string, error) {
+	if held, err := s.approvalForChange(r, "agent.delete", a.ID, a.Hostname, o); err != nil {
+		return "", err
+	} else if held {
+		return "", errApprovalPending
+	}
+	by := currentUser(r).Username
+	if actor, ok := r.Context().Value(apiActorKey).(string); ok {
+		by = actor
+	}
+	return s.startAgentRemoval(r.Context(), a, o, by, s.guard.ClientIP(r))
 }
 
 // startAgentRemoval removes an agent now, or first lets it uninstall
@@ -369,7 +386,7 @@ func (s *Server) completeAgentRemoval(ctx context.Context, a Agent, backups, by,
 	if err != nil {
 		return err
 	}
-	if backups == removeAllBackups || len(repos) == 0 {
+	if backups == removeAllBackups {
 		err = s.store.DeleteAgent(ctx, a.ID)
 	} else {
 		err = s.store.softRemoveAgent(ctx, a.ID)

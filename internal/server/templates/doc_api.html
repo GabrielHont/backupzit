@@ -8,11 +8,11 @@
 <p>Tokens can expire, can be revoked by their owner or an administrator (<a href="/users">Users</a>), and stop working when the owner is disabled. Actions done with a token appear in the audit log with the token's name.</p>
 
 <h2>Endpoints</h2>
-<p>Responses are JSON except file downloads and Prometheus metrics. Base URL: <code>https://&lt;console&gt;:8443</code>. Send <code>Content-Type: application/json</code> with JSON request bodies. The complete <code>/api/v1/openapi.json</code> OpenAPI 3.1 contract uses the same Bearer authentication as the API.</p>
+<p>Responses are JSON except file downloads and Prometheus metrics. Public installer downloads are the only endpoint below that does not require a Bearer token. Base URL: <code>https://&lt;console&gt;:8443</code>. Send <code>Content-Type: application/json</code> with JSON request bodies. The complete <code>/api/v1/openapi.json</code> OpenAPI 3.1 contract uses the same Bearer authentication as the API.</p>
 <table>
   <tr><th>Method and path</th><th>Role</th><th>Returns</th></tr>
   <tr><td><code>GET /api/v1/status</code></td><td>Viewer</td><td>Overall health: agents online, failures and warnings in 24 h, active runs, unreviewed suspicious backups, <code>"ok": true|false</code></td></tr>
-  <tr><td><code>GET /api/v1/agents</code></td><td>Viewer</td><td>Agents with OS, version, online state and last contact</td></tr>
+  <tr><td><code>GET /api/v1/agents</code></td><td>Viewer</td><td>Agents with display name (<code>name</code>), reported <code>hostname</code>, OS, version, online state and last contact</td></tr>
   <tr><td><code>GET /api/v1/jobs</code>, <code>GET /api/v1/jobs/{id}</code></td><td>Viewer</td><td>Jobs with schedule, next run and last result</td></tr>
   <tr><td><code>POST /api/v1/jobs/{id}/run</code></td><td>Restore operator</td><td>Starts the job now: <code>{"run_id": 123}</code> (202), or 409 if a run is already active</td></tr>
   <tr><td><code>POST /api/v1/jobs/{id}/test</code></td><td>Restore operator</td><td>Starts a restore test of the job's newest backup</td></tr>
@@ -35,6 +35,10 @@
   <tr><td><code>GET /api/v1/runs/{id}/download?path=...</code></td><td>Restore operator</td><td>Stream a file, or a folder as a ZIP archive</td></tr>
   <tr><td><code>POST /api/v1/runs/{id}/restore</code></td><td>Restore operator</td><td>Queue a file restore and return the created run (202)</td></tr>
   <tr><td><code>GET /api/v1/openapi.json</code></td><td>Viewer</td><td>OpenAPI 3.1 contract for every public endpoint</td></tr>
+  <tr><td><code>GET /api/v1/agent-packages</code></td><td>Viewer</td><td>All available agent installers: file, os, arch, kind, version, size in bytes, SHA-256</td></tr>
+  <tr><td><code>GET /agent/{file}</code></td><td>Public</td><td>Allowlisted MSI/DEB/RPM installer from the console public URL; supports HEAD and ranges</td></tr>
+  <tr><td><code>PATCH /api/v1/agents/{id}</code></td><td>Backup operator</td><td>Set display name: <code>{"name":"Office PC"}</code>; reported hostname and repository stay fixed</td></tr>
+  <tr><td><code>DELETE /api/v1/agents/{id}</code></td><td>Backup operator</td><td>Remove enrollment and jobs, keep backups and completed history; follows UI approval rules</td></tr>
 </table>
 <p>Periods: <code>today</code>, <code>yesterday</code>, <code>last7</code>, <code>last30</code>, <code>last90</code>, <code>thisweek</code>, <code>lastweek</code>, <code>thismonth</code>, <code>lastmonth</code>, or <code>custom</code> with <code>from=2026-09-01&amp;to=2026-09-30</code>.</p>
 <p>Errors return <code>{"error": "..."}</code> with 400 (bad request), 401 (missing, invalid or expired token), 403 (role too low), 404 or 409.</p>
@@ -53,6 +57,60 @@
 <pre>PUT /api/v1/limits
 {"maxAgents":10}</pre>
 <p>Use <code>null</code> for no limit or 0 to prevent new enrollment. Every non-removed agent counts, including recovery media. Lowering the limit does not remove existing agents. Token consumption, agent insertion and the shared cap are checked in one transaction, including simultaneous enrollment with different tokens. A failed enrollment consumes no use. The enrollment protocol returns an English error when the cap is reached.</p>
+
+<h2>Install an agent without a console session</h2>
+<p>The portal reads <code>GET /api/v1/agent-packages</code> server-side using its Bearer token. The array contains every installed version, sorted by filename. Select the OS, architecture (<code>amd64</code>, <code>arm64</code>, <code>386</code> or <code>arm</code>) and package kind. Windows legacy packages have <code>version</code> ending in <code>-legacy</code>. An empty array means no installers are available. Only versioned agent MSI/DEB/RPM files are public; repository/server packages, standalone programs, recovery media, directories and symbolic links are excluded. The console does not download missing packages.</p>
+<p>Build the download URL as <code>public_url + "/agent/" + file</code>, outside <code>/api/v1</code>. The route needs neither a UI cookie nor a Bearer token, including when web console network access is restricted. The session-only <code>/downloads/{file}</code> route is unchanged. Downloads include the correct media type, <code>Content-Length</code>, <code>X-Content-SHA256</code>, a SHA-256 ETag and <code>Cache-Control: public, max-age=3600, must-revalidate</code>. The hash is calculated from the file and cached by file identity, size and mtime. For a ranged response the SHA-256 still describes the full installer.</p>
+<p>Substitute an actual catalog <code>file</code> and its <code>sha256</code> into these commands, together with the configured HTTPS public URL and a one-use <code>BZ1-...</code> code. <code>SHA256_FROM_AGENT_PACKAGES</code> is a placeholder, not a digest. Use a trusted HTTPS certificate and compare the file against the digest supplied by the authenticated catalog. The portal API token stays on the portal server. Installers contain no enrollment secrets; enrollment still requires the BZ1 code.</p>
+<h3>Windows MSI (elevated PowerShell)</h3>
+<p>The installer property is <code>ENROLLCODE</code>, verified in <code>packaging/windows/agent.wxs</code>. It invokes <code>enroll --if-not-enrolled --pending-ok --code</code> before starting the service. The silent command is <code>msiexec /i package.msi /qn ENROLLCODE="BZ1-..."</code>. Exit code 3010 means success with a reboot required.</p>
+<pre>$ErrorActionPreference = 'Stop'
+$Console = 'https://backup.example.com:8443'
+$File = 'backupzit-agent-0.47.3-x64.msi'
+$ExpectedSha256 = 'SHA256_FROM_AGENT_PACKAGES'
+$EnrollCode = 'BZ1-...'
+if ($ExpectedSha256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'Set SHA-256 from the authenticated package catalog' }
+$Msi = Join-Path $env:TEMP ([Guid]::NewGuid().ToString() + '.msi')
+try {
+    Invoke-WebRequest -UseBasicParsing -Uri "$Console/agent/$File" -OutFile $Msi
+    if ((Get-FileHash -LiteralPath $Msi -Algorithm SHA256).Hash -ne $ExpectedSha256) { throw 'Installer SHA-256 mismatch' }
+    $MsiArgs = '/i "{0}" /qn ENROLLCODE="{1}"' -f $Msi, $EnrollCode
+    $Process = Start-Process -FilePath 'msiexec.exe' -ArgumentList $MsiArgs -Wait -PassThru
+    if ($Process.ExitCode -notin 0, 3010) { throw "msiexec failed: $($Process.ExitCode)" }
+} finally {
+    Remove-Item -LiteralPath $Msi -Force -ErrorAction SilentlyContinue
+}</pre>
+<h3>Debian / Ubuntu</h3>
+<pre>set -eu
+console='https://backup.example.com:8443'
+file='backupzit-agent_0.47.3_amd64.deb'
+sha256='SHA256_FROM_AGENT_PACKAGES'
+code='BZ1-...'
+package_dir=$(mktemp -d)
+trap 'rm -rf "$package_dir"' EXIT HUP INT TERM
+curl --fail --silent --show-error "$console/agent/$file" --output "$package_dir/$file"
+printf '%s  %s\n' "$sha256" "$package_dir/$file" | sha256sum --check --status
+sudo apt-get install -y "$package_dir/$file"
+sudo backupzit-agent enroll --code "$code"</pre>
+<h3>AlmaLinux / Rocky Linux</h3>
+<pre>set -eu
+console='https://backup.example.com:8443'
+file='backupzit-agent-0.47.3-1.x86_64.rpm'
+sha256='SHA256_FROM_AGENT_PACKAGES'
+code='BZ1-...'
+package_dir=$(mktemp -d)
+trap 'rm -rf "$package_dir"' EXIT HUP INT TERM
+curl --fail --silent --show-error "$console/agent/$file" --output "$package_dir/$file"
+printf '%s  %s\n' "$sha256" "$package_dir/$file" | sha256sum --check --status
+sudo dnf install -y "$package_dir/$file"
+sudo backupzit-agent enroll --code "$code"</pre>
+<p>The Linux command <code>backupzit-agent enroll --code</code> is defined in <code>cmd/backupzit-agent/service.go</code>. The package installs its system service; enroll afterwards as root.</p>
+
+<h2>Agent names and removal</h2>
+<p><code>PATCH /api/v1/agents/1</code> with <code>{"name":"Office PC"}</code> sets the display label, trimmed to 1–255 UTF-8 bytes without control characters. <code>GET /agents</code> and <code>GET /agents/{id}</code> return it as <code>name</code> (falling back to the hostname). The machine's <code>hostname</code>, UUID, numeric ID, credentials and <code>repo_dir</code> are unchanged. Agent polls cannot overwrite the label. The console agent list also shows it. Naming needs the agent-management permission and writes an <code>agent.rename</code> audit entry.</p>
+<p><code>DELETE /api/v1/agents/1</code> takes no body and uses the UI removal operation with <code>backups=keep</code> and <code>uninstall=false</code>. It requires the same permission, audit and four-eyes approval as UI removal: when enabled, a request is held with 409 until another user approves it in the console. The token owner cannot approve their own request. On completion the response is 200:</p>
+<pre>{"id":1,"removed":true,"backups":"kept","history":"kept","jobs":"deleted","uninstalled":false,"message":"Agent removed. Its backups stay in Activity and can be restored to another agent."}</pre>
+<p>The agent can no longer authenticate. Its job configurations are deleted, queued runs are dropped, and running/stopping runs become failed. All storage backups and completed history remain, including agents without registered repositories. Kept runs retain their IDs and have <code>job_id:null</code>. The software remains installed on the computer; uninstall it locally if desired. Restore retained snapshots to another active agent using the existing restore endpoint. Repeated DELETE, GET or PATCH for the removed agent returns 404. Destructive backup deletion and remote uninstallation remain UI choices.</p>
 
 <h2>Encrypted S3 targets</h2>
 <pre>POST /api/v1/targets
@@ -94,6 +152,8 @@ POST /api/v1/runs/123/restore
 
 <h2>Page through run history</h2>
 <p>Request <code>/api/v1/runs?limit=100</code>, then pass the last returned <code>id</code> as <code>before</code> for the next page. Keep the same filters: for example <code>?agent=1&amp;status=failed&amp;before=456&amp;limit=100</code>. IDs are strictly descending, the cursor is exclusive, and new runs cannot displace older pages. An empty array ends the traversal. The response remains an array; existing <code>job</code>, <code>agent</code>, <code>status</code> and <code>limit</code> parameters remain supported. Invalid limits retain the old fallback of 100; invalid cursors return 400.</p>
+
+<p>For assisted recovery store the console identity together with the numeric <code>agent id</code> and <code>run id</code>. Both are BIGSERIAL primary keys backed by noncycling sequences; ordinary inserts do not reuse deleted IDs. <code>GET /api/v1/runs/{id}</code> remains readable after deleting the job: <code>job_id</code> becomes <code>null</code>, while the run ID, agent ID, snapshot and repository are retained. Removing an agent through this API also keeps completed history. Explicit destructive UI deletion can remove history; UI backup adoption can move a run to a successor agent, so use the returned <code>agent_id</code> when resolving a saved run. IDs are scoped to the console database.</p>
 
 <h2>Examples</h2>
 <h3>curl</h3>

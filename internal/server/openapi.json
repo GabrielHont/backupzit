@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "BackupZit public API (Unirea fork)",
-    "version": "1.0.0",
-    "description": "One organization per console. Authenticate every request with Authorization: Bearer bzt_.... The token effective role is capped by its enabled owner current role. All errors use an English error string; mutating requests use application/json. No-store responses. Enrollment agent protocol and browser-session routes are separate APIs.",
+    "version": "1.1.0",
+    "description": "One organization per console. Authenticate /api/v1 requests with Authorization: Bearer bzt_.... The token effective role is capped by its enabled owner current role. All errors use an English error string; mutating requests use application/json. API JSON responses use no-store. The separately scoped GET /agent/{file} installer download is public and cacheable. Enrollment agent protocol and browser-session routes are separate APIs.",
     "license": {
       "name": "GNU Affero General Public License v3.0",
       "url": "https://www.gnu.org/licenses/agpl-3.0.html"
@@ -71,7 +71,7 @@
       "get": {
         "operationId": "getAgent",
         "summary": "Get an agent",
-        "description": "Get an agent",
+        "description": "Get an active agent. name is the custom display label, falling back to the reported hostname. Removed agents return 404; their runs remain readable.",
         "x-minimum-role": "viewer",
         "responses": {
           "400": {
@@ -104,6 +104,126 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Agent"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "renameAgent",
+        "summary": "Change an agent display name",
+        "description": "Set name (trimmed, 1-255 UTF-8 bytes, no control characters). Does not change hostname reported by the machine, UUID, numeric ID, enrollment credentials or repo_dir. The name survives future agent polls. GET agents and GET agent return name, falling back to hostname for agents without a custom name. Uses the UI agent-management permission and records agent.rename audit. No four-eyes rule applies to naming. Removed agents return 404.",
+        "x-minimum-role": "operator",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agent"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRename"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "removeAgent",
+        "summary": "Remove an agent and keep its backups",
+        "description": "No request body. Equivalent to UI removal with backups=keep and uninstall=false. Uses the same agent-management permission, agent.delete audit and four-eyes approval. With approval enabled, returns 409 and creates a request for another user; the token owner cannot approve their own request. On completion the agent can no longer authenticate, its job configurations are deleted (not merely disabled), queued runs are dropped, and running/stopping runs are marked failed. All backup data on storage and completed run history are kept, also when no repository is registered. Retained runs keep their numeric run and agent IDs and have job_id:null; GET /runs/{id} remains readable. Software is still installed: uninstall locally if desired. Restore kept snapshots to another active agent via the existing restore API. This API never deletes backup data or schedules uninstallation. Repeating deletion returns 404.",
+        "x-minimum-role": "operator",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRemoval"
                 }
               }
             }
@@ -553,7 +673,7 @@
       "delete": {
         "operationId": "deleteJob",
         "summary": "Delete a job configuration",
-        "description": "Keeps existing backups. With four-eyes approval enabled, records a pending request and returns 409. A second user decides in the console. Group members cannot be changed individually.",
+        "description": "Keeps existing backups. With four-eyes approval enabled, records a pending request and returns 409. A second user decides in the console. Group members cannot be changed individually. Completed runs keep their stable run/agent IDs and remain readable with GET /runs/{id}, with job_id:null.",
         "x-minimum-role": "operator",
         "responses": {
           "400": {
@@ -1229,7 +1349,7 @@
       "get": {
         "operationId": "getRun",
         "summary": "Get a run",
-        "description": "Get a run",
+        "description": "Read a run by its stable BIGSERIAL ID, also after its job was deleted (job_id:null) or its agent was removed with backups kept. Agent IDs and run IDs use noncycling sequences and ordinary inserts do not reuse deleted IDs. IDs are scoped to a console database; store the console identity, agent ID and run ID for assisted recovery. Retained snapshot/repository fields are independent of the job configuration. Explicit destructive UI deletion or backup adoption can remove the old agent or change a run association; use the returned agent_id when resolving a request.",
         "x-minimum-role": "viewer",
         "responses": {
           "400": {
@@ -1846,6 +1966,241 @@
           }
         ]
       }
+    },
+    "/agent-packages": {
+      "get": {
+        "operationId": "listAgentPackages",
+        "summary": "List available agent installers",
+        "description": "All available regular agent installer files, sorted by filename; [] if none are installed. Includes older versions and the legacy Windows installer (version ends in -legacy). OS uses windows/linux and arch uses Go names amd64/arm64/386/arm. Only strictly recognized versioned MSI, DEB and RPM filenames are included; server/repository packages, executables, recovery media, links and directories are excluded. size is in bytes. sha256 is lowercase hexadecimal, computed from the actual file and cached by identity, size and mtime. The portal selects a file for the OS/architecture and injects its file and sha256, the console public_url and a one-use BZ1 enrollment code into the examples. Do not send the portal API token to a new computer. Use a trusted HTTPS certificate for the public download. The MSI property is ENROLLCODE (packaging/windows/agent.wxs); the agent CLI is backupzit-agent enroll --code (cmd/backupzit-agent/service.go). Run PowerShell elevated. MSI exit 3010 means success with reboot required. Examples contain placeholders; SHA256_FROM_AGENT_PACKAGES must be replaced with the catalog SHA-256, and filenames with an actual catalog entry. No packages are fetched from upstream by this endpoint.",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AgentPackage"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "PowerShell",
+            "label": "Windows MSI (elevated PowerShell)",
+            "source": "$ErrorActionPreference = 'Stop'\n$Console = 'https://backup.example.com:8443'\n$File = 'backupzit-agent-0.47.3-x64.msi'\n$ExpectedSha256 = 'SHA256_FROM_AGENT_PACKAGES'\n$EnrollCode = 'BZ1-...'\nif ($ExpectedSha256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'Set SHA-256 from the authenticated package catalog' }\n$Msi = Join-Path $env:TEMP ([Guid]::NewGuid().ToString() + '.msi')\ntry {\n    Invoke-WebRequest -UseBasicParsing -Uri \"$Console/agent/$File\" -OutFile $Msi\n    if ((Get-FileHash -LiteralPath $Msi -Algorithm SHA256).Hash -ne $ExpectedSha256) { throw 'Installer SHA-256 mismatch' }\n    $MsiArgs = '/i \"{0}\" /qn ENROLLCODE=\"{1}\"' -f $Msi, $EnrollCode\n    $Process = Start-Process -FilePath 'msiexec.exe' -ArgumentList $MsiArgs -Wait -PassThru\n    if ($Process.ExitCode -notin 0, 3010) { throw \"msiexec failed: $($Process.ExitCode)\" }\n} finally {\n    Remove-Item -LiteralPath $Msi -Force -ErrorAction SilentlyContinue\n}"
+          },
+          {
+            "lang": "Shell",
+            "label": "Debian / Ubuntu",
+            "source": "set -eu\nconsole='https://backup.example.com:8443'\nfile='backupzit-agent_0.47.3_amd64.deb'\nsha256='SHA256_FROM_AGENT_PACKAGES'\ncode='BZ1-...'\npackage_dir=$(mktemp -d)\ntrap 'rm -rf \"$package_dir\"' EXIT HUP INT TERM\ncurl --fail --silent --show-error \"$console/agent/$file\" --output \"$package_dir/$file\"\nprintf '%s  %s\\n' \"$sha256\" \"$package_dir/$file\" | sha256sum --check --status\nsudo apt-get install -y \"$package_dir/$file\"\nsudo backupzit-agent enroll --code \"$code\""
+          },
+          {
+            "lang": "Shell",
+            "label": "AlmaLinux / Rocky Linux",
+            "source": "set -eu\nconsole='https://backup.example.com:8443'\nfile='backupzit-agent-0.47.3-1.x86_64.rpm'\nsha256='SHA256_FROM_AGENT_PACKAGES'\ncode='BZ1-...'\npackage_dir=$(mktemp -d)\ntrap 'rm -rf \"$package_dir\"' EXIT HUP INT TERM\ncurl --fail --silent --show-error \"$console/agent/$file\" --output \"$package_dir/$file\"\nprintf '%s  %s\\n' \"$sha256\" \"$package_dir/$file\" | sha256sum --check --status\nsudo dnf install -y \"$package_dir/$file\"\nsudo backupzit-agent enroll --code \"$code\""
+          }
+        ]
+      }
+    },
+    "/agent/{file}": {
+      "get": {
+        "operationId": "downloadAgentPackage",
+        "summary": "Download an agent installer without a session",
+        "description": "Use this route at the root of the console public_url, outside /api/v1. It is public, including on the agent port when console UI network access is restricted. The filename must be a regular installer file accepted by GET /api/v1/agent-packages; no traversal, symbolic links or arbitrary files. MSI/DEB/RPM installers contain no enrollment secrets. Enrollment still requires a valid BZ1 code. The existing session-authenticated /downloads/{file} route is unchanged. GET also supports HEAD, byte ranges and conditional requests.",
+        "servers": [
+          {
+            "url": "/"
+          }
+        ],
+        "security": [],
+        "x-minimum-role": "public",
+        "parameters": [
+          {
+            "name": "file",
+            "in": "path",
+            "required": true,
+            "description": "Exact file value from the authenticated agent package catalog.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "backupzit-agent-0.47.3-x64.msi"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Installer bytes (HEAD: headers only).",
+            "headers": {
+              "Content-Length": {
+                "description": "Full file size for GET/HEAD; the selected range size for 206.",
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                }
+              },
+              "X-Content-SHA256": {
+                "description": "SHA-256 of the complete file. Verify against the digest supplied by the authenticated catalog.",
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "ETag": {
+                "description": "Quoted full-file SHA-256; supports If-None-Match.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "public, max-age=3600, must-revalidate"
+                }
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/x-msi": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/vnd.debian.binary-package": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/x-rpm": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "Requested byte range; X-Content-SHA256 still describes the complete file.",
+            "headers": {
+              "Content-Length": {
+                "description": "Full file size for GET/HEAD; the selected range size for 206.",
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                }
+              },
+              "X-Content-SHA256": {
+                "description": "SHA-256 of the complete file. Verify against the digest supplied by the authenticated catalog.",
+                "schema": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "ETag": {
+                "description": "Quoted full-file SHA-256; supports If-None-Match.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "public, max-age=3600, must-revalidate"
+                }
+              },
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/x-msi": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/vnd.debian.binary-package": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "application/x-rpm": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "ETag or modification date unchanged."
+          },
+          "404": {
+            "description": "Missing or disallowed installer."
+          },
+          "416": {
+            "description": "Unsatisfiable byte range."
+          },
+          "500": {
+            "description": "Unable to calculate a consistent installer checksum."
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "PowerShell",
+            "label": "Windows MSI (elevated PowerShell)",
+            "source": "$ErrorActionPreference = 'Stop'\n$Console = 'https://backup.example.com:8443'\n$File = 'backupzit-agent-0.47.3-x64.msi'\n$ExpectedSha256 = 'SHA256_FROM_AGENT_PACKAGES'\n$EnrollCode = 'BZ1-...'\nif ($ExpectedSha256 -notmatch '^[0-9a-fA-F]{64}$') { throw 'Set SHA-256 from the authenticated package catalog' }\n$Msi = Join-Path $env:TEMP ([Guid]::NewGuid().ToString() + '.msi')\ntry {\n    Invoke-WebRequest -UseBasicParsing -Uri \"$Console/agent/$File\" -OutFile $Msi\n    if ((Get-FileHash -LiteralPath $Msi -Algorithm SHA256).Hash -ne $ExpectedSha256) { throw 'Installer SHA-256 mismatch' }\n    $MsiArgs = '/i \"{0}\" /qn ENROLLCODE=\"{1}\"' -f $Msi, $EnrollCode\n    $Process = Start-Process -FilePath 'msiexec.exe' -ArgumentList $MsiArgs -Wait -PassThru\n    if ($Process.ExitCode -notin 0, 3010) { throw \"msiexec failed: $($Process.ExitCode)\" }\n} finally {\n    Remove-Item -LiteralPath $Msi -Force -ErrorAction SilentlyContinue\n}"
+          },
+          {
+            "lang": "Shell",
+            "label": "Debian / Ubuntu",
+            "source": "set -eu\nconsole='https://backup.example.com:8443'\nfile='backupzit-agent_0.47.3_amd64.deb'\nsha256='SHA256_FROM_AGENT_PACKAGES'\ncode='BZ1-...'\npackage_dir=$(mktemp -d)\ntrap 'rm -rf \"$package_dir\"' EXIT HUP INT TERM\ncurl --fail --silent --show-error \"$console/agent/$file\" --output \"$package_dir/$file\"\nprintf '%s  %s\\n' \"$sha256\" \"$package_dir/$file\" | sha256sum --check --status\nsudo apt-get install -y \"$package_dir/$file\"\nsudo backupzit-agent enroll --code \"$code\""
+          },
+          {
+            "lang": "Shell",
+            "label": "AlmaLinux / Rocky Linux",
+            "source": "set -eu\nconsole='https://backup.example.com:8443'\nfile='backupzit-agent-0.47.3-1.x86_64.rpm'\nsha256='SHA256_FROM_AGENT_PACKAGES'\ncode='BZ1-...'\npackage_dir=$(mktemp -d)\ntrap 'rm -rf \"$package_dir\"' EXIT HUP INT TERM\ncurl --fail --silent --show-error \"$console/agent/$file\" --output \"$package_dir/$file\"\nprintf '%s  %s\\n' \"$sha256\" \"$package_dir/$file\" | sha256sum --check --status\nsudo dnf install -y \"$package_dir/$file\"\nsudo backupzit-agent enroll --code \"$code\""
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -1935,7 +2290,8 @@
         "properties": {
           "id": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Console-scoped BIGSERIAL identity, independent of the display name; ordinary inserts do not reuse deleted IDs."
           },
           "hostname": {
             "type": "string"
@@ -1990,10 +2346,15 @@
           "enrollment_token_id": {
             "type": "integer",
             "format": "int64"
+          },
+          "name": {
+            "type": "string",
+            "description": "Custom display name, or reported hostname when no custom name has been set."
           }
         },
         "required": [
           "id",
+          "name",
           "hostname",
           "os",
           "version",
@@ -2449,7 +2810,8 @@
         "properties": {
           "id": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Console-scoped BIGSERIAL identity; ordinary inserts do not reuse deleted IDs."
           },
           "kind": {
             "type": "string"
@@ -3222,6 +3584,119 @@
           "info",
           "paths"
         ]
+      },
+      "AgentRename": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Trimmed name, 1-255 UTF-8 bytes and no control characters."
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "AgentPackage": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "os": {
+            "type": "string",
+            "enum": [
+              "windows",
+              "linux"
+            ]
+          },
+          "arch": {
+            "type": "string",
+            "enum": [
+              "amd64",
+              "arm64",
+              "386",
+              "arm"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "msi",
+              "deb",
+              "rpm"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "description": "Package version, including package revision or -legacy where applicable."
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "file",
+          "os",
+          "arch",
+          "kind",
+          "version",
+          "size",
+          "sha256"
+        ],
+        "additionalProperties": false
+      },
+      "AgentRemoval": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "removed": {
+            "type": "boolean",
+            "const": true
+          },
+          "backups": {
+            "type": "string",
+            "const": "kept"
+          },
+          "history": {
+            "type": "string",
+            "const": "kept",
+            "description": "Completed run history. Queued runs are dropped; running/stopping runs are failed."
+          },
+          "jobs": {
+            "type": "string",
+            "const": "deleted"
+          },
+          "uninstalled": {
+            "type": "boolean",
+            "const": false
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "removed",
+          "backups",
+          "history",
+          "jobs",
+          "uninstalled",
+          "message"
+        ],
+        "additionalProperties": false
       }
     },
     "responses": {

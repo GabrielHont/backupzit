@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -190,26 +191,49 @@ func (s *Server) availableUpdates(agents []Agent) map[int64]agentUpdate {
 	return out
 }
 
+type installerChecksum struct {
+	info os.FileInfo
+	sum  string
+}
+
 // fileSHA256 hashes an installer, caching by name, size and time.
 func (s *Server) fileSHA256(path string) (string, error) {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return "", err
-	}
-	key := fmt.Sprintf("%s|%d|%d", path, fi.Size(), fi.ModTime().UnixNano())
-	if v, ok := s.shaCache.Load(key); ok {
-		return v.(string), nil
-	}
 	f, err := os.Open(path) // #nosec G304 -- file of the console's own data or installer directory, not named by a request
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	return s.openFileSHA256(path, f, fi)
+}
+
+// Hash the descriptor we serve, not a second open by path. Replacing a package
+// invalidates its one cache entry even if the replacement has the same mtime.
+func (s *Server) openFileSHA256(path string, f *os.File, fi os.FileInfo) (string, error) {
+	if !fi.Mode().IsRegular() {
+		return "", errors.New("installer is not a regular file")
+	}
+	if v, ok := s.shaCache.Load(path); ok {
+		cached := v.(installerChecksum)
+		if cached.info.Size() == fi.Size() && cached.info.ModTime().Equal(fi.ModTime()) && os.SameFile(cached.info, fi) {
+			return cached.sum, nil
+		}
+	}
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
 	}
+	after, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	if after.Size() != fi.Size() || !after.ModTime().Equal(fi.ModTime()) {
+		return "", errors.New("installer changed while hashing")
+	}
 	sum := hex.EncodeToString(h.Sum(nil))
-	s.shaCache.Store(key, sum)
+	s.shaCache.Store(path, installerChecksum{fi, sum})
 	return sum, nil
 }

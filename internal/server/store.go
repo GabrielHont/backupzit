@@ -332,15 +332,16 @@ func newUUID() string {
 }
 
 type Agent struct {
-	ID         int64
-	UUID       string
-	Hostname   string
-	RepoDir    string
-	OS         string
-	Arch       string
-	Version    string
-	EnrolledAt time.Time
-	LastSeen   *time.Time
+	ID          int64
+	UUID        string
+	Hostname    string
+	DisplayName string
+	RepoDir     string
+	OS          string
+	Arch        string
+	Version     string
+	EnrolledAt  time.Time
+	LastSeen    *time.Time
 	// Inventory is the agent's disk list (JSON array of imaging.Disk).
 	Inventory   json.RawMessage
 	InventoryAt *time.Time
@@ -360,6 +361,14 @@ type Agent struct {
 	Capabilities      []string
 }
 
+// Name is the console label, falling back to the machine's reported hostname.
+func (a Agent) Name() string {
+	if a.DisplayName != "" {
+		return a.DisplayName
+	}
+	return a.Hostname
+}
+
 // Disks decodes the reported disk inventory.
 func (a Agent) Disks() []imaging.Disk {
 	var d []imaging.Disk
@@ -374,11 +383,11 @@ func (a Agent) Online() bool {
 	return a.LastSeen != nil && time.Since(*a.LastSeen) < 3*time.Minute
 }
 
-const agentCols = `id, uuid, hostname, repo_dir, os, arch, version, enrolled_at, last_seen_at, inventory, inventory_at, recovery, local_ips, remote_addr, hypervisor, max_runs, removed_at, enrollment_token_id, capabilities`
+const agentCols = `id, uuid, hostname, repo_dir, os, arch, version, enrolled_at, last_seen_at, inventory, inventory_at, recovery, local_ips, remote_addr, hypervisor, max_runs, removed_at, enrollment_token_id, capabilities, display_name`
 
 func scanAgent(r pgx.Row, extra ...any) (Agent, error) {
 	var a Agent
-	dest := append([]any{&a.ID, &a.UUID, &a.Hostname, &a.RepoDir, &a.OS, &a.Arch, &a.Version, &a.EnrolledAt, &a.LastSeen, &a.Inventory, &a.InventoryAt, &a.Recovery, &a.LocalIPs, &a.RemoteAddr, &a.Hypervisor, &a.MaxRuns, &a.RemovedAt, &a.EnrollmentTokenID, &a.Capabilities}, extra...)
+	dest := append([]any{&a.ID, &a.UUID, &a.Hostname, &a.RepoDir, &a.OS, &a.Arch, &a.Version, &a.EnrolledAt, &a.LastSeen, &a.Inventory, &a.InventoryAt, &a.Recovery, &a.LocalIPs, &a.RemoteAddr, &a.Hypervisor, &a.MaxRuns, &a.RemovedAt, &a.EnrollmentTokenID, &a.Capabilities, &a.DisplayName}, extra...)
 	err := r.Scan(dest...)
 	return a, err
 }
@@ -443,6 +452,12 @@ func (s *Store) GetAgent(ctx context.Context, id int64) (Agent, error) {
 func (s *Store) DeleteAgent(ctx context.Context, id int64) error {
 	_, err := s.db.Exec(ctx, `DELETE FROM agents WHERE id=$1`, id)
 	return err
+}
+
+func (s *Store) setAgentDisplayName(ctx context.Context, id int64, name string) (Agent, error) {
+	a, err := scanAgent(s.db.QueryRow(ctx, `UPDATE agents SET display_name=$2
+		WHERE id=$1 AND removed_at IS NULL RETURNING `+agentCols, id, name))
+	return a, notFound(err)
 }
 
 // ---- jobs

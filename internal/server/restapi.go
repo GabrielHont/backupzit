@@ -207,6 +207,7 @@ func (s *Server) api(perm Perm, h apiHandler) http.HandlerFunc {
 
 type apiAgent struct {
 	ID                int64      `json:"id"`
+	Name              string     `json:"name"`
 	Hostname          string     `json:"hostname"`
 	OS                string     `json:"os"`
 	Version           string     `json:"version"`
@@ -275,7 +276,7 @@ func toAPIAgent(a Agent) apiAgent {
 	if caps == nil {
 		caps = []string{}
 	}
-	return apiAgent{a.ID, a.Hostname, a.OS + "/" + a.Arch, a.Version, a.Online(), a.LastSeen, a.Recovery, a.LocalIPs, a.RemoteAddr, a.EnrolledAt, max(a.MaxRuns, 1), a.EnrollmentTokenID, caps}
+	return apiAgent{a.ID, a.Name(), a.Hostname, a.OS + "/" + a.Arch, a.Version, a.Online(), a.LastSeen, a.Recovery, a.LocalIPs, a.RemoteAddr, a.EnrolledAt, max(a.MaxRuns, 1), a.EnrollmentTokenID, caps}
 }
 
 func toAPIJob(j Job) apiJob {
@@ -455,6 +456,8 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	s.registerAPITargets(mux)
 	s.registerAPIRecovery(mux)
 	s.registerAPIDocs(mux)
+	s.registerAPIAgentPackages(mux)
+	s.registerAPIAgentMutations(mux)
 }
 
 // ---- token management pages (My account)

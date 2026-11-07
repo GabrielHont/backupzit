@@ -41,7 +41,7 @@ func (a *WebAccess) Validate() error {
 
 // agentPath tells whether p belongs to the agents' API.
 func agentPath(p string) bool {
-	return strings.HasPrefix(p, "/api/agent/") || strings.HasPrefix(p, "/api/deploy/")
+	return strings.HasPrefix(p, "/api/agent/") || strings.HasPrefix(p, "/api/deploy/") || strings.HasPrefix(p, "/agent/")
 }
 
 type webAccessCache struct {
