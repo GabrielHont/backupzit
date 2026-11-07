@@ -51,6 +51,10 @@ func run() error {
 	tlsHosts := flag.String("tls-hosts", env("BACKUPZIT_TLS_HOSTS", ""), "comma-separated DNS names/IPs for the generated certificate")
 	devDB := flag.Bool("dev-embedded-db", false, "start a private PostgreSQL in the data directory (development/evaluation only)")
 	setPassword := flag.String("set-admin-password", "", "set the password of user 'admin' and exit")
+	adminPasswordFile := flag.String("admin-password-file", "", "read the initial admin password from this file (instead of the environment or a generated password)")
+	createAPIToken := flag.String("create-api-token", "", "create an API token for the local admin, print only the token to stdout and exit")
+	tokenRole := flag.String("role", "admin", "with --create-api-token: viewer, restore, operator or admin")
+	tokenDays := flag.Int("expires-days", 0, "with --create-api-token: validity in days (0 never, at most 3650)")
 	unblock := flag.String("unblock-ip", "", "lift the sign-in block of an address (or \"all\") and exit")
 	devHTTP := flag.String("dev-http", "", "also serve plain HTTP on this loopback address, e.g. 127.0.0.1:8080 (development only)")
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -63,6 +67,17 @@ func run() error {
 	showInitial := flag.Bool("initial-password", false, "print the generated first password of user 'admin' (while it is still in use) and exit")
 	restorePre := flag.String("restore-pre-upgrade", "", "container image: load the copy of the console made before an update (a folder in <data-dir>/pre-upgrade) and exit; run it with the image of the version the copy was made from")
 	flag.Parse()
+	if *adminPasswordFile != "" && *setPassword != "" {
+		return errors.New("use --admin-password-file for initialization, or --set-admin-password to reset an existing password")
+	}
+	if *createAPIToken != "" {
+		if err := validateTokenFlags(*createAPIToken, *tokenRole, *tokenDays); err != nil {
+			return err
+		}
+		if *setPassword != "" || *unblock != "" || *restoreConsole || *applyUpdate || *setup || *healthcheck || *showVersion || *showInitial || *restorePre != "" {
+			return errors.New("--create-api-token cannot be combined with another one-shot command")
+		}
+	}
 
 	if *showVersion {
 		fmt.Println("backupzit-server", version)
@@ -79,7 +94,11 @@ func run() error {
 		fmt.Print(string(b))
 		return nil
 	}
-	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	var logOutput io.Writer = os.Stdout
+	if *createAPIToken != "" {
+		logOutput = os.Stderr
+	}
+	log := slog.New(slog.NewTextHandler(logOutput, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if *setup {
@@ -112,7 +131,7 @@ func run() error {
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err == nil {
 		if lf, err := logfile.Open(logPath); err == nil {
 			defer lf.Close()
-			log = slog.New(slog.NewTextHandler(io.MultiWriter(os.Stdout, lf), nil))
+			log = slog.New(slog.NewTextHandler(io.MultiWriter(logOutput, lf), nil))
 		} else {
 			log.Warn("log file", "err", err)
 		}
@@ -179,10 +198,25 @@ func run() error {
 		fmt.Printf("%d address(es) unblocked\n", n)
 		return nil
 	}
-	if err := ensureAdmin(ctx, store, *dataDir, log); err != nil {
+	password := os.Getenv("BACKUPZIT_ADMIN_PASSWORD")
+	if *adminPasswordFile != "" {
+		password, err = readAdminPasswordFile(*adminPasswordFile)
+		if err != nil {
+			return err
+		}
+	}
+	if err := ensureAdminWithPassword(ctx, store, *dataDir, log, password); err != nil {
 		return err
 	}
 	forgetChangedInitialPassword(ctx, store, *dataDir, log)
+	if *createAPIToken != "" {
+		token, err := store.CreateProvisioningAPIToken(ctx, *createAPIToken, *tokenRole, *tokenDays)
+		if err != nil {
+			return err
+		}
+		fmt.Println(token)
+		return nil
+	}
 
 	var hosts []string
 	for _, h := range strings.Split(*tlsHosts, ",") {
@@ -264,6 +298,10 @@ func defaultDataDir() string {
 // from BACKUPZIT_ADMIN_PASSWORD or is generated and written to a file.
 func ensureAdmin(ctx context.Context, store *server.Store, dataDir string, log *slog.Logger) error {
 	pw := os.Getenv("BACKUPZIT_ADMIN_PASSWORD")
+	return ensureAdminWithPassword(ctx, store, dataDir, log, pw)
+}
+
+func ensureAdminWithPassword(ctx context.Context, store *server.Store, dataDir string, log *slog.Logger, pw string) error {
 	generated := pw == ""
 	if generated {
 		pw = server.RandomPassword()
@@ -279,7 +317,7 @@ func ensureAdmin(ctx context.Context, store *server.Store, dataDir string, log *
 		}
 		log.Warn("created user 'admin' with a generated password", "password_file", p)
 	} else {
-		log.Info("created user 'admin' from BACKUPZIT_ADMIN_PASSWORD")
+		log.Info("created user 'admin' from the supplied password")
 	}
 	return nil
 }

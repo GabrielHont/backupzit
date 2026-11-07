@@ -16,3 +16,5 @@ Changes made by Unirea Cloud, starting 7 November 2026:
   add yearly retention alongside the existing retention rules.
 - Expose snapshot file listing, streaming file/ZIP downloads and agent
   restoration; add stable run cursors with filters applied before the limit.
+- Add one-shot CLI API-token provisioning and initial password files, with
+  token-only stdout and audit entries that exclude the token secret.
