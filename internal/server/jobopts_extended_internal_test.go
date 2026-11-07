@@ -11,16 +11,16 @@ import (
 )
 
 func TestExtendedJobOptions(t *testing.T) {
-	a := Agent{OS: "Windows 11", Version: "0.47.4"}
+	a := Agent{OS: "Windows 11", Version: "0.47.3", Capabilities: []string{api.CapabilityJobOptions}}
 	j := Job{Kind: JobImage, Options: JobOptions{VSS: new(false), ImageDisks: []int{0, 2}}, Retention: repo.RetentionPolicy{KeepYearly: 5}}
 	if err := checkExtendedJobOptions(a, j); err != nil {
 		t.Fatal(err)
 	}
-	a.Version = "0.47.3"
+	a.Capabilities = nil
 	if err := checkExtendedJobOptions(a, j); err == nil {
 		t.Fatal("old agent accepted extended options")
 	}
-	a.Version = "0.47.4"
+	a.Capabilities = []string{api.CapabilityJobOptions}
 	a.OS = "Linux"
 	if err := checkExtendedJobOptions(a, j); err == nil {
 		t.Fatal("Linux image accepted")

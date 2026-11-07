@@ -140,7 +140,7 @@ func enroll(ctx context.Context, serverURL, token, fingerprint, version string, 
 	host, osName, arch := hostInfo(version)
 	c := &Client{cfg: &Config{ServerURL: serverURL, Fingerprint: fingerprint}, http: httpClient(fingerprint)}
 	var resp api.EnrollResponse
-	req := api.EnrollRequest{Token: token, Hostname: host, OS: osName, Arch: arch, Version: version, Recovery: recovery}
+	req := api.EnrollRequest{Token: token, Hostname: host, OS: osName, Arch: arch, Version: version, Recovery: recovery, Capabilities: []string{api.CapabilityJobOptions}}
 	err := c.post(ctx, api.PathEnroll, req, &resp, false)
 	if err != nil && errors.Is(err, tlsutil.ErrFingerprintMismatch) {
 		// Codes made by consoles before 0.33.6 on their web port (443,
@@ -245,6 +245,7 @@ func (a *Agent) PollOnce(ctx context.Context) (time.Duration, error) {
 	host, osName, arch := hostInfo(a.version)
 	var resp api.PollResponse
 	req := api.PollRequest{Hostname: host, OS: osName, Arch: arch, Version: a.version, Busy: busy, Running: running, Parallel: true, IPs: localIPs(), Instance: a.instance, Progress: a.runProgress()}
+	req.Capabilities = []string{api.CapabilityJobOptions}
 	req.WantStatus = a.wantStatus()
 	invEvery := a.InventoryInterval
 	if invEvery <= 0 {

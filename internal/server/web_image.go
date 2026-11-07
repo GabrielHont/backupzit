@@ -121,17 +121,25 @@ func s3Location(endpoint, bucket, prefix string, plainHTTP bool) (string, error)
 	if endpoint == "" || bucket == "" {
 		return "", errors.New("S3 endpoint and bucket are required")
 	}
-	if strings.ContainsAny(endpoint, "/?#") || strings.ContainsAny(bucket, "/?#") {
+	if strings.ContainsAny(endpoint, "/?#@ \t\r\n\x00") || strings.ContainsAny(bucket, "/?#@ \t\r\n\x00") {
 		return "", errors.New("invalid S3 endpoint or bucket name")
 	}
-	loc := "s3://" + endpoint + "/" + bucket
+	if strings.ContainsRune(prefix, 0) {
+		return "", errors.New("invalid S3 prefix")
+	}
+	for _, part := range strings.Split(prefix, "/") {
+		if part == "." || part == ".." {
+			return "", errors.New("S3 prefix must not contain dot path components")
+		}
+	}
+	u := url.URL{Scheme: "s3", Host: endpoint, Path: "/" + bucket}
 	if prefix != "" {
-		loc += "/" + prefix
+		u.Path += "/" + prefix
 	}
 	if plainHTTP {
-		loc += "?tls=false"
+		u.RawQuery = "tls=false"
 	}
-	return loc, nil
+	return u.String(), nil
 }
 
 // hardenedLocation builds hardened://host:port/path from form fields.

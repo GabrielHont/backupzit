@@ -13,8 +13,11 @@ import (
 )
 
 const (
-	PathEnroll = "/api/agent/enroll"
-	PathPoll   = "/api/agent/poll"
+	// CapabilityJobOptions advertises VSS overrides, explicit image disk
+	// lists and yearly retention in this fork's agent protocol.
+	CapabilityJobOptions = "job-options-v1"
+	PathEnroll           = "/api/agent/enroll"
+	PathPoll             = "/api/agent/poll"
 	// PathRunStart and PathRunFinish take the run id as a suffix: /api/agent/runs/{id}/start
 	PathRunsPrefix = "/api/agent/runs/"
 	// PathDownloadPrefix serves agent installers to agents (self-update).
@@ -23,11 +26,12 @@ const (
 
 // EnrollRequest registers a new agent using a tenant enrollment token.
 type EnrollRequest struct {
-	Token    string `json:"token"`
-	Hostname string `json:"hostname"`
-	OS       string `json:"os"`
-	Arch     string `json:"arch"`
-	Version  string `json:"version"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	Token        string   `json:"token"`
+	Hostname     string   `json:"hostname"`
+	OS           string   `json:"os"`
+	Arch         string   `json:"arch"`
+	Version      string   `json:"version"`
 	// Recovery marks a temporary agent running from recovery media.
 	Recovery bool `json:"recovery,omitempty"`
 }
@@ -52,10 +56,11 @@ type RunProgress struct {
 }
 
 type PollRequest struct {
-	Hostname string `json:"hostname"`
-	OS       string `json:"os"`
-	Arch     string `json:"arch"`
-	Version  string `json:"version"`
+	Capabilities []string `json:"capabilities,omitempty"`
+	Hostname     string   `json:"hostname"`
+	OS           string   `json:"os"`
+	Arch         string   `json:"arch"`
+	Version      string   `json:"version"`
 	// Busy is true while the agent is executing a run; the server then
 	// assigns no new work.
 	Busy bool `json:"busy"`

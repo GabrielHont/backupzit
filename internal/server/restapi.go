@@ -218,6 +218,7 @@ type apiAgent struct {
 	Enrolled          time.Time  `json:"enrolled"`
 	MaxRuns           int        `json:"max_runs"`
 	EnrollmentTokenID *int64     `json:"enrollment_token_id,omitempty"`
+	Capabilities      []string   `json:"capabilities"`
 }
 
 type apiJob struct {
@@ -270,7 +271,11 @@ type apiRun struct {
 }
 
 func toAPIAgent(a Agent) apiAgent {
-	return apiAgent{a.ID, a.Hostname, a.OS + "/" + a.Arch, a.Version, a.Online(), a.LastSeen, a.Recovery, a.LocalIPs, a.RemoteAddr, a.EnrolledAt, max(a.MaxRuns, 1), a.EnrollmentTokenID}
+	caps := a.Capabilities
+	if caps == nil {
+		caps = []string{}
+	}
+	return apiAgent{a.ID, a.Hostname, a.OS + "/" + a.Arch, a.Version, a.Online(), a.LastSeen, a.Recovery, a.LocalIPs, a.RemoteAddr, a.EnrolledAt, max(a.MaxRuns, 1), a.EnrollmentTokenID, caps}
 }
 
 func toAPIJob(j Job) apiJob {

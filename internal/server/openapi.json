@@ -1981,6 +1981,12 @@
             "format": "int64",
             "minimum": 1
           },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "enrollment_token_id": {
             "type": "integer",
             "format": "int64"
@@ -1997,7 +2003,8 @@
           "local_ips",
           "seen_from",
           "enrolled",
-          "max_runs"
+          "max_runs",
+          "capabilities"
         ],
         "additionalProperties": false
       },
@@ -2041,7 +2048,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "Union of retention rules; all zero keeps everything. Yearly retention requires the fork agent with extended job options (0.47.4 or newer)."
+        "description": "Union of retention rules; all zero keeps everything. Yearly retention requires the fork agent advertising job-options-v1."
       },
       "JobOptions": {
         "type": "object",
@@ -2051,7 +2058,7 @@
               "boolean",
               "null"
             ],
-            "description": "Windows only. Omit/null uses the agent default; true/false overrides it. Requires an updated fork agent."
+            "description": "Windows only. Omit/null uses the agent default; true/false overrides it. Requires an agent advertising job-options-v1."
           },
           "image_disks": {
             "type": [
@@ -2065,7 +2072,7 @@
             },
             "uniqueItems": true,
             "maxItems": 128,
-            "description": "Image jobs: explicit whole-disk selection; omit/null uses image_disk. Requires an updated fork agent."
+            "description": "Image jobs: explicit whole-disk selection; omit/null uses image_disk. Requires an agent advertising job-options-v1."
           },
           "limit_mbps": {
             "type": "integer",
@@ -3037,7 +3044,10 @@
         "type": "object",
         "properties": {
           "job_id": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64"
           },
           "job": {

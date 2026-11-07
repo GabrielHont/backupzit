@@ -3,16 +3,17 @@ package server
 import (
 	"errors"
 	"fmt"
+	"github.com/max-zit/backupzit/internal/api"
+	"slices"
 	"strings"
 )
 
-// These wire fields require the corresponding fork agent. Older agents
-// ignore unknown JSON fields, which could otherwise produce partial backups.
-const minExtendedOptionsVersion = "0.47.4"
+// Older agents ignore unknown JSON fields. Require explicit support to
+// prevent silently incomplete disk backups or ignored retention settings.
 
 func checkExtendedJobOptions(a Agent, j Job) error {
-	if (j.Options.VSS != nil || len(j.Options.ImageDisks) > 0 || j.Retention.KeepYearly > 0) && agentOlder(a, minExtendedOptionsVersion) {
-		return fmt.Errorf("VSS overrides, disk lists and yearly retention require an updated fork agent (%s or newer)", minExtendedOptionsVersion)
+	if (j.Options.VSS != nil || len(j.Options.ImageDisks) > 0 || j.Retention.KeepYearly > 0) && !slices.Contains(a.Capabilities, api.CapabilityJobOptions) {
+		return fmt.Errorf("VSS overrides, disk lists and yearly retention require an updated agent advertising job-options-v1; upgrade the fork agent and wait for its next poll")
 	}
 	windows := strings.HasPrefix(strings.ToLower(a.OS), "windows")
 	if (j.Kind == JobImage || j.Options.VSS != nil) && !windows {
@@ -40,4 +41,11 @@ func checkExtendedJobOptions(a Agent, j Job) error {
 		return errors.New("image_disk must be -1 (all disks) or a non-negative disk number")
 	}
 	return nil
+}
+
+func agentCapabilities(reported []string) []string {
+	if slices.Contains(reported, api.CapabilityJobOptions) {
+		return []string{api.CapabilityJobOptions}
+	}
+	return []string{}
 }

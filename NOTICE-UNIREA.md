@@ -20,3 +20,5 @@ Changes made by Unirea Cloud, starting 7 November 2026:
   token-only stdout and audit entries that exclude the token secret.
 - Document all public routes in an embedded OpenAPI 3.1 contract and update
   the English API guide, with contract-to-route and response-shape tests.
+- Negotiate extended job support explicitly through agent capabilities; escape
+  S3 prefixes and display yearly-only retention safely in the console.

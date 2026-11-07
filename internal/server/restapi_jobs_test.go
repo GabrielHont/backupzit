@@ -39,7 +39,7 @@ func TestAPITargetsAndJobs(t *testing.T) {
 		t.Fatalf("target leak: %d %s", code, body)
 	}
 	token, _, _ := e.store.CreateEnrollmentToken(e.ctx, time.Hour)
-	resp, err := e.store.EnrollAgent(e.ctx, api.EnrollRequest{Token: token, Hostname: "linux", OS: "Linux", Version: "test"})
+	resp, err := e.store.EnrollAgent(e.ctx, api.EnrollRequest{Token: token, Hostname: "linux", OS: "Linux", Version: "test", Capabilities: []string{api.CapabilityJobOptions}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestAPITargetsAndJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wr, err := e.store.EnrollAgent(e.ctx, api.EnrollRequest{Token: token, Hostname: "windows", OS: "Windows 11", Version: "0.47.4"})
+	wr, err := e.store.EnrollAgent(e.ctx, api.EnrollRequest{Token: token, Hostname: "windows", OS: "Windows 11", Version: "0.47.3", Capabilities: []string{api.CapabilityJobOptions}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestAPITargetsAndJobs(t *testing.T) {
 		if _, err := e.store.QueueBackup(e.ctx, created.ID, "api"); err != nil {
 			t.Fatal(err)
 		}
-		code, b = apiJSONCall(t, e, wr.AgentUUID+":"+wr.Secret, "POST", "/api/agent/poll", `{"hostname":"windows","os":"Windows 11","arch":"amd64","version":"0.47.4","instance":"image-api-test"}`)
+		code, b = apiJSONCall(t, e, wr.AgentUUID+":"+wr.Secret, "POST", "/api/agent/poll", `{"hostname":"windows","os":"Windows 11","arch":"amd64","version":"0.47.3","capabilities":["job-options-v1"],"instance":"image-api-test"}`)
 		var poll api.PollResponse
 		if code != 200 || json.Unmarshal([]byte(b), &poll) != nil || poll.Run == nil {
 			t.Fatalf("image dispatch: %d %s", code, b)
@@ -135,5 +135,17 @@ func TestAPITargetsAndJobs(t *testing.T) {
 		if err := e.store.FinishRun(e.ctx, win.ID, poll.Run.ID, api.RunResult{Status: api.StatusFailed, Message: "dispatch tested"}); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// A downgraded/legacy agent must clear stale support on its next poll.
+	if err := e.store.TouchAgent(e.ctx, win.ID, api.PollRequest{OS: "Windows 11", Version: "0.47.3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := e.store.GetAgent(e.ctx, win.ID)
+	if err != nil || len(legacy.Capabilities) != 0 {
+		t.Fatalf("stale capability: %+v %v", legacy, err)
+	}
+	unsupported := fmt.Sprintf(`{"kind":"image","agent_id":%d,"target_id":%d,"name":"Unsupported list","options":{"image_disks":[0,2]}}`, win.ID, tid)
+	if code, b := apiJSONCall(t, e, op, "POST", "/api/v1/jobs", unsupported); code != 400 {
+		t.Fatalf("legacy agent accepted extended options: %d %s", code, b)
 	}
 }

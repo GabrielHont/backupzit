@@ -8,7 +8,7 @@
 <p>Tokens can expire, can be revoked by their owner or an administrator (<a href="/users">Users</a>), and stop working when the owner is disabled. Actions done with a token appear in the audit log with the token's name.</p>
 
 <h2>Endpoints</h2>
-<p>Responses are JSON except file downloads and Prometheus metrics. Base URL: <code>https://&lt;console&gt;:8443</code>. Send <code>Content-Type: application/json</code> with JSON request bodies. The complete <a href="/api/v1/openapi.json">OpenAPI 3.1 contract</a> uses the same Bearer authentication as the API.</p>
+<p>Responses are JSON except file downloads and Prometheus metrics. Base URL: <code>https://&lt;console&gt;:8443</code>. Send <code>Content-Type: application/json</code> with JSON request bodies. The complete <code>/api/v1/openapi.json</code> OpenAPI 3.1 contract uses the same Bearer authentication as the API.</p>
 <table>
   <tr><th>Method and path</th><th>Role</th><th>Returns</th></tr>
   <tr><td><code>GET /api/v1/status</code></td><td>Viewer</td><td>Overall health: agents online, failures and warnings in 24 h, active runs, unreviewed suspicious backups, <code>"ok": true|false</code></td></tr>
@@ -39,13 +39,13 @@
 <p>Periods: <code>today</code>, <code>yesterday</code>, <code>last7</code>, <code>last30</code>, <code>last90</code>, <code>thisweek</code>, <code>lastweek</code>, <code>thismonth</code>, <code>lastmonth</code>, or <code>custom</code> with <code>from=2026-09-01&amp;to=2026-09-30</code>.</p>
 <p>Errors return <code>{"error": "..."}</code> with 400 (bad request), 401 (missing, invalid or expired token), 403 (role too low), 404 or 409.</p>
 
-<h2 id="provisioning">Provisioning without the web console</h2>
+<h2>Provisioning without the web console</h2>
 <p>Supply the console's database URL and data directory through <code>BACKUPZIT_DB</code> and <code>BACKUPZIT_DATA_DIR</code>, then run:</p>
 <pre>backupzit-server --create-api-token portal --role admin --expires-days 30 \
   --admin-password-file /run/backupzit-admin-password</pre>
 <p>This one-shot command initializes the console if needed, creates a token for the enabled local <code>admin</code>, prints only <code>bzt_...</code> followed by a newline to stdout, and exits before starting HTTP listeners or background services. Diagnostic messages go to stderr. Capture the token directly into your secret store. The initial password file supplies one password of 8–72 bytes; it does not reset an existing account. It can be omitted when an admin already exists or the normal environment/generated-password initialization is desired. Expiry defaults to 0 (never), with a maximum of 3650 days. Roles and token validation match the web console.</p>
 
-<h2 id="enrollment">Enrollment and agent limits</h2>
+<h2>Enrollment and agent limits</h2>
 <pre>POST /api/v1/enrollment-tokens
 {"maxUses":1,"ttlHours":24,"label":"Reception PC"}</pre>
 <p>Returns 201 with <code>id</code>, <code>code</code> (<code>BZ1-...</code>), <code>expiresAt</code>, <code>maxUses</code> and metadata. The code includes the enrollment secret, agent URL and certificate fingerprint; it is shown only in the creation response. Omitted values default to one use and 24 hours. Explicit <code>maxUses:null</code> means unlimited; TTL must be 1–8760 hours. The legacy UI tokens remain unlimited and valid for their existing duration.</p>
@@ -54,14 +54,14 @@
 {"maxAgents":10}</pre>
 <p>Use <code>null</code> for no limit or 0 to prevent new enrollment. Every non-removed agent counts, including recovery media. Lowering the limit does not remove existing agents. Token consumption, agent insertion and the shared cap are checked in one transaction, including simultaneous enrollment with different tokens. A failed enrollment consumes no use. The enrollment protocol returns an English error when the cap is reached.</p>
 
-<h2 id="storage-api">Encrypted S3 targets</h2>
+<h2>Encrypted S3 targets</h2>
 <pre>POST /api/v1/targets
 {"name":"Office backups","endpoint":"s3.example.com:9000","bucket":"backups",
  "prefix":"office","region":"eu-central-1","accessKey":"...","secretKey":"...",
  "tls":true,"lockDays":30}</pre>
 <p>Returns 201 with target metadata and a generated <code>recoveryKey</code>. Save that key immediately; subsequent public API reads never return it or the S3 credentials. Encryption is always enabled for targets created here, and credentials use the same encryption at rest as in the console. TLS defaults to true; <code>lockDays</code> is 0–3650 (0 disables retention requests). Prepare the bucket and Object Lock on the storage provider before enabling it. Creation saves configuration without probing the remote service. DELETE refuses a target still used by jobs and never deletes stored backup data.</p>
 
-<h2 id="jobs-api">Create and change backup jobs</h2>
+<h2>Create and change backup jobs</h2>
 <pre>POST /api/v1/jobs
 {"kind":"files","name":"Documents","agent_id":1,"target_id":2,
  "paths":["C:\\Users"],"excludes":["*.tmp"],"schedule":"0 22 * * *",
@@ -75,14 +75,14 @@
 POST /api/v1/jobs
 {"kind":"image","name":"Selected disks","agent_id":1,"target_id":2,
  "options":{"image_disks":[0,2],"vss":true}}</pre>
-<p><code>image_disk:-1</code> selects all internal disks. A non-negative value selects one disk; <code>image_partitions</code> can narrow that single-disk choice. <code>options.image_disks</code> selects whole disks explicitly, read from one VSS set. VSS defaults to the agent setting (enabled on Windows); omit or set <code>vss:null</code> to use that default. VSS overrides, disk lists and yearly retention require the updated fork agent built as version 0.47.4 or newer; older versioned agents are rejected to prevent silently ignoring these fields.</p>
+<p><code>image_disk:-1</code> selects all internal disks. A non-negative value selects one disk; <code>image_partitions</code> can narrow that single-disk choice. <code>options.image_disks</code> selects whole disks explicitly, read from one VSS set. VSS defaults to the agent setting (enabled on Windows); omit or set <code>vss:null</code> to use that default. VSS overrides, disk lists and yearly retention require the updated fork agent advertising <code>job-options-v1</code> in <code>capabilities</code>. The fork agent sends it at enrollment and on every poll. Existing agents without this capability are rejected for these options; normal jobs remain compatible. Upgrade the agent and wait for its next poll before configuring the new options.</p>
 <pre>PATCH /api/v1/jobs/7
 {"name":"Documents nightly","excludes":["*.tmp","Cache/**"],
  "retention":{"keep_daily":14},"options":{"limit_mbps":0}}</pre>
 <p>PATCH merges supplied fields, including nested options and retention. Omitted fields remain unchanged; empty lists clear selections and zero clears a numeric option. Agent, target, job kind and the original single-disk/partition selector stay fixed, as in the UI. Use the enable/disable endpoints for scheduling state. Group members must be changed through their group in the console. Only administrators may change pre/post commands and their time limit. Public job responses add <code>raw_schedule</code>, exclusions, retention and safe job options, while preserving the existing human-readable <code>schedule</code>.</p>
 <p>Deletes and shorter retention follow the UI's four-eyes policy. When enabled, a request is recorded and the API returns 409 with instructions for a second user to decide under Approvals. A PATCH holds the shorter retention while saving its other safe changes, just as the UI does. Repeating an already pending change also returns 409. Deleting a job removes configuration and keeps its stored backups.</p>
 
-<h2 id="recovery-api">Browse, download and restore</h2>
+<h2>Browse, download and restore</h2>
 <p>File listing returns an array such as <code>[{"name":"report.txt","path":"/C/Data/report.txt","type":"file","size":123,"modTime":"2026-11-07T10:00:00Z"}]</code>. Paths use snapshot components and forward slashes: <code>/C/Users</code> on Windows or <code>/srv/data</code> on Linux. Use returned paths in subsequent requests; parent traversal and NUL are rejected.</p>
 <p>Listing and downloading share the console file browser: file and Linux system backups on storage accessible from the console. Local/USB storage, expired snapshots, disk images and SSH-key-only storage retain the UI's limitations (409). A single file is streamed as <code>application/octet-stream</code>; folders use <code>application/zip</code>. A read failure after headers aborts the transfer. Treat an incomplete transfer as a failed download.</p>
 <pre>POST /api/v1/runs/123/restore
@@ -92,7 +92,7 @@ POST /api/v1/runs/123/restore
 {"paths":["/C/Data"],"target":"original"}</pre>
 <p>Returns 202 with the newly queued run, in the GET run format. Poll it for completion. The source agent is selected by default; optional <code>agent_id</code> and <code>verify</code> match the UI choices. Use <code>paths:["/"]</code> for the whole backup. Restoring through an agent also works when its repository is on its local disk, since the console need not read that storage. The existing restore rules reject expired snapshots and unsupported backup types.</p>
 
-<h2 id="history-api">Page through run history</h2>
+<h2>Page through run history</h2>
 <p>Request <code>/api/v1/runs?limit=100</code>, then pass the last returned <code>id</code> as <code>before</code> for the next page. Keep the same filters: for example <code>?agent=1&amp;status=failed&amp;before=456&amp;limit=100</code>. IDs are strictly descending, the cursor is exclusive, and new runs cannot displace older pages. An empty array ends the traversal. The response remains an array; existing <code>job</code>, <code>agent</code>, <code>status</code> and <code>limit</code> parameters remain supported. Invalid limits retain the old fallback of 100; invalid cursors return 400.</p>
 
 <h2>Examples</h2>

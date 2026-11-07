@@ -306,9 +306,9 @@ func (s *Store) EnrollAgent(ctx context.Context, req api.EnrollRequest) (api.Enr
 	}
 	req.Hostname, req.OS, req.Arch, req.Version = clip(req.Hostname, 255), clip(req.OS, 255), clip(req.Arch, 32), clip(req.Version, 64)
 	resp := api.EnrollResponse{AgentUUID: newUUID(), Secret: randomToken(32)}
-	_, err = tx.Exec(ctx, `INSERT INTO agents(uuid, secret_hash, hostname, repo_dir, os, arch, version, last_seen_at, recovery, enrollment_token_id)
-		VALUES($1,$2,$3,$4,$5,$6,$7,now(),$8,$9)`,
-		resp.AgentUUID, hashToken(resp.Secret), req.Hostname, agentRepoDir(req.Hostname, resp.AgentUUID), req.OS, req.Arch, req.Version, req.Recovery, tokenID)
+	_, err = tx.Exec(ctx, `INSERT INTO agents(uuid, secret_hash, hostname, repo_dir, os, arch, version, last_seen_at, recovery, enrollment_token_id,capabilities)
+		VALUES($1,$2,$3,$4,$5,$6,$7,now(),$8,$9,$10)`,
+		resp.AgentUUID, hashToken(resp.Secret), req.Hostname, agentRepoDir(req.Hostname, resp.AgentUUID), req.OS, req.Arch, req.Version, req.Recovery, tokenID, agentCapabilities(req.Capabilities))
 	if err != nil {
 		return api.EnrollResponse{}, err
 	}
@@ -357,6 +357,7 @@ type Agent struct {
 	// RemovedAt is set for removed agents kept for their backups.
 	RemovedAt         *time.Time
 	EnrollmentTokenID *int64
+	Capabilities      []string
 }
 
 // Disks decodes the reported disk inventory.
@@ -373,11 +374,11 @@ func (a Agent) Online() bool {
 	return a.LastSeen != nil && time.Since(*a.LastSeen) < 3*time.Minute
 }
 
-const agentCols = `id, uuid, hostname, repo_dir, os, arch, version, enrolled_at, last_seen_at, inventory, inventory_at, recovery, local_ips, remote_addr, hypervisor, max_runs, removed_at, enrollment_token_id`
+const agentCols = `id, uuid, hostname, repo_dir, os, arch, version, enrolled_at, last_seen_at, inventory, inventory_at, recovery, local_ips, remote_addr, hypervisor, max_runs, removed_at, enrollment_token_id, capabilities`
 
 func scanAgent(r pgx.Row, extra ...any) (Agent, error) {
 	var a Agent
-	dest := append([]any{&a.ID, &a.UUID, &a.Hostname, &a.RepoDir, &a.OS, &a.Arch, &a.Version, &a.EnrolledAt, &a.LastSeen, &a.Inventory, &a.InventoryAt, &a.Recovery, &a.LocalIPs, &a.RemoteAddr, &a.Hypervisor, &a.MaxRuns, &a.RemovedAt, &a.EnrollmentTokenID}, extra...)
+	dest := append([]any{&a.ID, &a.UUID, &a.Hostname, &a.RepoDir, &a.OS, &a.Arch, &a.Version, &a.EnrolledAt, &a.LastSeen, &a.Inventory, &a.InventoryAt, &a.Recovery, &a.LocalIPs, &a.RemoteAddr, &a.Hypervisor, &a.MaxRuns, &a.RemovedAt, &a.EnrollmentTokenID, &a.Capabilities}, extra...)
 	err := r.Scan(dest...)
 	return a, err
 }
@@ -421,8 +422,8 @@ func (s *Store) TouchAgent(ctx context.Context, id int64, req api.PollRequest, r
 	}
 	_, err := s.db.Exec(ctx, `UPDATE agents SET last_seen_at=now(),
 		hostname=COALESCE(NULLIF($2,''),hostname), os=COALESCE(NULLIF($3,''),os),
-		arch=COALESCE(NULLIF($4,''),arch), version=COALESCE(NULLIF($5,''),version) WHERE id=$1`,
-		id, req.Hostname, req.OS, req.Arch, req.Version)
+		arch=COALESCE(NULLIF($4,''),arch), version=COALESCE(NULLIF($5,''),version),capabilities=$6 WHERE id=$1`,
+		id, req.Hostname, req.OS, req.Arch, req.Version, agentCapabilities(req.Capabilities))
 	return err
 }
 
