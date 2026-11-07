@@ -817,13 +817,13 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request, user strin
 }
 
 func (s *Server) handleAgentToken(w http.ResponseWriter, r *http.Request, user string) {
-	tok, exp, err := s.store.CreateEnrollmentToken(r.Context(), 7*24*time.Hour)
+	t, tok, err := s.newEnrollment(r, 7*24*time.Hour, nil, "")
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
 	pub := s.publicURL(r)
-	s.agentsPage(w, r, user, &enrollInfo{Token: tok, Expires: exp, ServerURL: pub, Fingerprint: s.CertFingerprint,
+	s.agentsPage(w, r, user, &enrollInfo{Token: tok, Expires: t.ExpiresAt, ServerURL: pub, Fingerprint: s.CertFingerprint,
 		Code: api.EncodeEnrollCode(pub, tok, s.CertFingerprint)})
 }
 

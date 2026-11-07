@@ -356,6 +356,9 @@ func (s *Server) audit(r *http.Request, action, format string, args ...any) {
 	if u := currentUser(r); u != nil {
 		user = u.Username
 	}
+	if actor, ok := r.Context().Value(apiActorKey).(string); ok {
+		user = actor
+	}
 	s.auditAs(r, user, action, fmt.Sprintf(format, args...))
 }
 

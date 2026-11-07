@@ -127,6 +127,16 @@ type apiError struct {
 	msg  string
 }
 
+type apiResponse struct {
+	status int
+	value  any
+}
+
+// apiStreamed tells the wrapper that the handler already wrote the response.
+type apiStreamed struct{}
+
+const apiActorKey ctxKey = 20
+
 func (e apiError) Error() string { return e.msg }
 
 func apiErr(code int, format string, a ...any) error {
@@ -154,8 +164,10 @@ func (s *Server) api(perm Perm, h apiHandler) http.HandlerFunc {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "the token's role does not allow this"})
 			return
 		}
-		u.Username = who
 		r = r.WithContext(context.WithValue(r.Context(), userCtxKey, &u))
+		// Keep the real username for two-person approval. The token label
+		// belongs only in audit entries, never in identity comparisons.
+		r = r.WithContext(context.WithValue(r.Context(), apiActorKey, who))
 		v, err := h(w, r)
 		if err != nil {
 			var ae apiError
@@ -176,6 +188,16 @@ func (s *Server) api(perm Perm, h apiHandler) http.HandlerFunc {
 		if r.Method == http.MethodPost {
 			code = http.StatusAccepted
 		}
+		if _, ok := v.(apiStreamed); ok {
+			return
+		}
+		if resp, ok := v.(apiResponse); ok {
+			code, v = resp.status, resp.value
+		}
+		if code == http.StatusNoContent {
+			w.WriteHeader(code)
+			return
+		}
 		writeJSON(w, code, v)
 	}
 }
@@ -183,17 +205,18 @@ func (s *Server) api(perm Perm, h apiHandler) http.HandlerFunc {
 // JSON shapes (stable field names, independent of internal structs).
 
 type apiAgent struct {
-	ID       int64      `json:"id"`
-	Hostname string     `json:"hostname"`
-	OS       string     `json:"os"`
-	Version  string     `json:"version"`
-	Online   bool       `json:"online"`
-	LastSeen *time.Time `json:"last_seen"`
-	Recovery bool       `json:"recovery"`
-	LocalIPs []string   `json:"local_ips"`
-	SeenFrom string     `json:"seen_from"`
-	Enrolled time.Time  `json:"enrolled"`
-	MaxRuns  int        `json:"max_runs"`
+	ID                int64      `json:"id"`
+	Hostname          string     `json:"hostname"`
+	OS                string     `json:"os"`
+	Version           string     `json:"version"`
+	Online            bool       `json:"online"`
+	LastSeen          *time.Time `json:"last_seen"`
+	Recovery          bool       `json:"recovery"`
+	LocalIPs          []string   `json:"local_ips"`
+	SeenFrom          string     `json:"seen_from"`
+	Enrolled          time.Time  `json:"enrolled"`
+	MaxRuns           int        `json:"max_runs"`
+	EnrollmentTokenID *int64     `json:"enrollment_token_id,omitempty"`
 }
 
 type apiJob struct {
@@ -240,7 +263,7 @@ type apiRun struct {
 }
 
 func toAPIAgent(a Agent) apiAgent {
-	return apiAgent{a.ID, a.Hostname, a.OS + "/" + a.Arch, a.Version, a.Online(), a.LastSeen, a.Recovery, a.LocalIPs, a.RemoteAddr, a.EnrolledAt, max(a.MaxRuns, 1)}
+	return apiAgent{a.ID, a.Hostname, a.OS + "/" + a.Arch, a.Version, a.Online(), a.LastSeen, a.Recovery, a.LocalIPs, a.RemoteAddr, a.EnrolledAt, max(a.MaxRuns, 1), a.EnrollmentTokenID}
 }
 
 func toAPIJob(j Job) apiJob {
@@ -264,7 +287,7 @@ func toAPIRunJSON(r Run) apiRun {
 
 func pathInt(r *http.Request, name string) (int64, error) {
 	id, err := strconv.ParseInt(r.PathValue(name), 10, 64)
-	if err != nil {
+	if err != nil || id <= 0 {
 		return 0, apiErr(http.StatusBadRequest, "invalid %s", name)
 	}
 	return id, nil
@@ -410,6 +433,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 		return out, err
 	}))
 	s.registerAPIMore(mux)
+	s.registerAPIProvision(mux)
 }
 
 // ---- token management pages (My account)

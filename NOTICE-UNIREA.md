@@ -7,3 +7,6 @@ Changes made by Unirea Cloud, starting 7 November 2026:
 
 - Parse console templates on first use to reduce idle memory; preserve all
   supported languages and documentation search.
+- Add limited-use enrollment tokens, atomic agent limits and enrollment
+  provenance, with public API endpoints and concurrency tests.
+- Keep API audit labels separate from user identities used for approval.
