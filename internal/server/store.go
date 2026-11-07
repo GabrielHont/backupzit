@@ -483,6 +483,9 @@ type Job struct {
 
 // checkJob validates and normalizes a job before it is stored.
 func (s *Store) checkJob(ctx context.Context, j *Job) error {
+	if err := validateRetention(j.Retention); err != nil {
+		return err
+	}
 	j.Name = strings.TrimSpace(j.Name)
 	if j.Kind == "" {
 		j.Kind = JobFiles
@@ -497,6 +500,11 @@ func (s *Store) checkJob(ctx context.Context, j *Job) error {
 		}
 		j.ImageDisk, j.ImagePartitions = nil, nil
 	case JobImage:
+		if len(j.Options.ImageDisks) > 0 {
+			d := imaging.AllDisks
+			j.ImageDisk = &d
+			j.ImagePartitions = nil
+		}
 		if j.ImageDisk == nil {
 			return errors.New("choose a disk to image")
 		}
@@ -583,6 +591,9 @@ func (s *Store) checkJob(ctx context.Context, j *Job) error {
 	if err != nil {
 		return errors.New("unknown agent")
 	}
+	if err := checkExtendedJobOptions(agent, *j); err != nil {
+		return err
+	}
 	if j.Kind == JobSQL {
 		if err := sqlAgentOK(agent, j.Options.SQLEngine); err != nil {
 			return err
@@ -624,7 +635,7 @@ func (s *Store) checkJob(ctx context.Context, j *Job) error {
 	} else {
 		j.VMwareHostID = nil
 	}
-	if j.Kind == JobImage {
+	if j.Kind == JobImage && len(j.Options.ImageDisks) == 0 {
 		if err := checkImageSelection(agent, *j.ImageDisk, j.ImagePartitions); err != nil {
 			return err
 		}
@@ -764,6 +775,9 @@ func (s *Store) QueueRestore(ctx context.Context, backupRunID, agentID int64, ta
 	b, err := s.GetRun(ctx, backupRunID)
 	if err != nil {
 		return 0, err
+	}
+	if b.Expired {
+		return 0, errors.New("the backup has expired")
 	}
 	if (b.Kind != api.KindBackup && b.Kind != api.KindCopy && b.Kind != api.KindSystemBackup) || b.SnapshotID == "" {
 		return 0, errors.New("run has no snapshot to restore")

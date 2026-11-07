@@ -182,23 +182,35 @@ func (s *Store) decideApproval(ctx context.Context, id int64, status, by, note s
 // four-eyes approval on it records the request, tells the administrators and
 // answers the browser, and returns true: the handler then stops.
 func (s *Server) needsApproval(w http.ResponseWriter, r *http.Request, back, action string, objectID int64, objectName string, payload any) bool {
+	held, err := s.approvalForChange(r, action, objectID, objectName, payload)
+	if err != nil {
+		redirectErr(w, r, back, err)
+		return true
+	}
+	if held {
+		redirectMsg(w, r, back, "Waiting for approval: another user must approve this change under Approvals.")
+	}
+	return held
+}
+
+// approvalForChange shares the audit, notification and approval identity
+// rules between the console and the public API.
+func (s *Server) approvalForChange(r *http.Request, action string, objectID int64, objectName string, payload any) (bool, error) {
 	ctx := r.Context()
 	if !s.store.fourEyes(ctx) {
-		return false
+		return false, nil
 	}
 	me := currentUser(r)
 	a := Approval{Action: action, ObjectID: objectID, ObjectName: objectName, RequestedBy: me.Username}
 	if payload != nil {
 		b, err := json.Marshal(payload)
 		if err != nil {
-			s.serverError(w, err)
-			return true
+			return true, err
 		}
 		a.Payload = b
 	}
 	if err := s.store.requestApproval(ctx, a); err != nil {
-		redirectErr(w, r, back, err)
-		return true
+		return true, err
 	}
 	s.audit(r, "approval.request", "%s: %s", a.Title(), objectName)
 	s.mailAdmins(ctx, func(l *language) (string, string) {

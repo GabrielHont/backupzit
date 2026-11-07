@@ -343,12 +343,11 @@ func (s *Server) handleFilePickRestore(w http.ResponseWriter, r *http.Request, _
 			includes = append(includes, agentSyntaxPath(c, win))
 		}
 	}
-	rid, err := s.store.QueueRestore(r.Context(), run.ID, formID(r, "agent_id"), target, includes, r.FormValue("verify") == "on")
+	rid, err := s.queueFileRestore(r, run.ID, formID(r, "agent_id"), target, includes, r.FormValue("verify") == "on")
 	if err != nil {
 		redirectErr(w, r, back, err)
 		return
 	}
-	s.audit(r, "restore.files", "run #%d from backup #%d to %q: %d ticked paths", rid, run.ID, target, len(includes))
 	redirectMsg(w, r, fmt.Sprintf("/runs/%d", rid), "Restore queued.")
 }
 

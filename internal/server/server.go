@@ -931,12 +931,11 @@ func (s *Server) handleTargetCreate(w http.ResponseWriter, r *http.Request, _ st
 		}
 		t.RecoveryKey = key
 	}
-	id, err := s.store.CreateTarget(r.Context(), t)
+	id, _, err := s.createStorageTarget(r, t)
 	if err != nil {
 		redirectErr(w, r, "/targets", err)
 		return
 	}
-	s.audit(r, "storage.create", "%s (%s) %s", t.Name, t.Kind, t.URL)
 	// Test it right away, so a typo shows now and not at the first backup.
 	if saved, err := s.store.GetTarget(r.Context(), id); err == nil && saved.Kind != "local" && saved.Kind != "usb" {
 		l := requestLanguage(r)
@@ -953,19 +952,14 @@ func (s *Server) handleTargetCreate(w http.ResponseWriter, r *http.Request, _ st
 
 func (s *Server) handleTargetDelete(w http.ResponseWriter, r *http.Request, _ string) {
 	id, _ := pathID(r)
-	t, err := s.store.GetTarget(r.Context(), id)
-	if err != nil {
-		http.NotFound(w, r)
+	if err := s.deleteStorageTarget(r, id); err != nil {
+		if errors.Is(err, errApprovalPending) {
+			redirectMsg(w, r, "/targets", err.Error())
+		} else {
+			redirectErr(w, r, "/targets", err)
+		}
 		return
 	}
-	if s.needsApproval(w, r, "/targets", "storage.delete", id, t.Name, nil) {
-		return
-	}
-	if err := s.store.DeleteTarget(r.Context(), id); err != nil {
-		redirectErr(w, r, "/targets", err)
-		return
-	}
-	s.audit(r, "storage.delete", "target %d", id)
 	redirectMsg(w, r, "/targets", "Storage target removed. Data on the storage was not deleted.")
 }
 
@@ -1079,17 +1073,11 @@ func (s *Server) handleJobCreate(w http.ResponseWriter, r *http.Request, _ strin
 			}
 		}
 	}
-	note, err := s.m365Precheck(r.Context(), requestLanguage(r), job)
+	id, note, err := s.createBackupJob(r, job)
 	if err != nil {
 		redirectErr(w, r, "/jobs", err)
 		return
 	}
-	id, err := s.store.CreateJob(r.Context(), job)
-	if err != nil {
-		redirectErr(w, r, "/jobs", err)
-		return
-	}
-	s.audit(r, "job.create", "#%d %s%s", id, job.Name, commandsAudit(JobOptions{}, job.Options))
 	redirectMsg(w, r, fmt.Sprintf("/jobs/%d", id), joinNote(requestLanguage(r), "Job created.", note))
 }
 
@@ -1183,22 +1171,15 @@ func (s *Server) handleJobEnable(enabled bool) func(http.ResponseWriter, *http.R
 
 func (s *Server) handleJobDelete(w http.ResponseWriter, r *http.Request, _ string) {
 	id, _ := pathID(r)
-	j, err := s.store.GetJob(r.Context(), id)
-	if err != nil {
-		http.NotFound(w, r)
+	back := fmt.Sprintf("/jobs/%d", id)
+	if err := s.deleteBackupJob(r, id); err != nil {
+		if errors.Is(err, errApprovalPending) {
+			redirectMsg(w, r, back, err.Error())
+		} else {
+			redirectErr(w, r, back, err)
+		}
 		return
 	}
-	if s.memberOfGroup(w, r, j) {
-		return
-	}
-	if s.needsApproval(w, r, fmt.Sprintf("/jobs/%d", id), "job.delete", id, j.Name, nil) {
-		return
-	}
-	if err := s.store.DeleteJob(r.Context(), id); err != nil {
-		redirectErr(w, r, "/jobs", err)
-		return
-	}
-	s.audit(r, "job.delete", "job %d", id)
 	redirectMsg(w, r, "/jobs", "Job deleted. Existing backups remain on the storage target.")
 }
 
@@ -1325,13 +1306,12 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request, _ string)
 		redirectErr(w, r, back, errors.New("enter a folder to restore into, or choose original location"))
 		return
 	}
-	rid, err := s.store.QueueRestore(r.Context(), id, formID(r, "agent_id"), target,
+	rid, err := s.queueFileRestore(r, id, formID(r, "agent_id"), target,
 		lines(r.FormValue("includes")), r.FormValue("verify") == "on")
 	if err != nil {
 		redirectErr(w, r, back, err)
 		return
 	}
-	s.audit(r, "restore.files", "run #%d from backup #%d to %q", rid, id, target)
 	redirectMsg(w, r, fmt.Sprintf("/runs/%d", rid), "Restore queued.")
 }
 

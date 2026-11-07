@@ -403,24 +403,13 @@ func (s *Server) handleJobEdit(w http.ResponseWriter, r *http.Request, _ string)
 			j.Paths = r.Form["vms"]
 		}
 	}
-	// With four-eyes approval a shorter retention waits for a second user;
-	// the other changes are saved now.
-	wanted := j.Retention
-	held := s.store.fourEyes(r.Context()) && shorterRetention(old.Retention, wanted)
-	if held {
-		j.Retention = old.Retention
-	}
-	note, err := s.m365Precheck(r.Context(), requestLanguage(r), j)
+	note, err := s.updateBackupJob(r, old, j)
 	if err != nil {
-		redirectErr(w, r, back+"/edit", err)
-		return
-	}
-	if err := s.store.UpdateJob(r.Context(), j); err != nil {
-		redirectErr(w, r, back+"/edit", err)
-		return
-	}
-	s.audit(r, "job.update", "#%d %s%s", id, j.Name, commandsAudit(old.Options, j.Options))
-	if held && s.needsApproval(w, r, back, "job.retention", id, j.Name, wanted) {
+		if errors.Is(err, errApprovalPending) {
+			redirectMsg(w, r, back, err.Error())
+		} else {
+			redirectErr(w, r, back+"/edit", err)
+		}
 		return
 	}
 	redirectMsg(w, r, back, joinNote(requestLanguage(r), "Job saved.", note))

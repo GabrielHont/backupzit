@@ -10,3 +10,7 @@ Changes made by Unirea Cloud, starting 7 November 2026:
 - Add limited-use enrollment tokens, atomic agent limits and enrollment
   provenance, with public API endpoints and concurrency tests.
 - Keep API audit labels separate from user identities used for approval.
+- Share storage, job and file-restore mutations between the UI and public API,
+  including encryption, audit, command permissions and four-eyes approvals.
+- Extend the agent protocol with per-job Windows VSS and disk selections, and
+  add yearly retention alongside the existing retention rules.

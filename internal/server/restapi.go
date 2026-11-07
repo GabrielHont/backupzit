@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/max-zit/backupzit/internal/repo"
 )
 
 // REST API for scripts, RMM and monitoring tools:
@@ -220,20 +221,26 @@ type apiAgent struct {
 }
 
 type apiJob struct {
-	ID           int64      `json:"id"`
-	Name         string     `json:"name"`
-	Kind         string     `json:"kind"`
-	AgentID      int64      `json:"agent_id"`
-	Agent        string     `json:"agent"`
-	TargetID     int64      `json:"target_id"`
-	Target       string     `json:"target"`
-	Enabled      bool       `json:"enabled"`
-	Schedule     string     `json:"schedule"`
-	NextRun      *time.Time `json:"next_run"`
-	LastStatus   string     `json:"last_status"`
-	LastFinished *time.Time `json:"last_finished"`
-	Paths        []string   `json:"paths,omitempty"`
-	SourceJobID  *int64     `json:"source_job_id,omitempty"`
+	ID              int64                `json:"id"`
+	Name            string               `json:"name"`
+	Kind            string               `json:"kind"`
+	AgentID         int64                `json:"agent_id"`
+	Agent           string               `json:"agent"`
+	TargetID        int64                `json:"target_id"`
+	Target          string               `json:"target"`
+	Enabled         bool                 `json:"enabled"`
+	Schedule        string               `json:"schedule"`
+	NextRun         *time.Time           `json:"next_run"`
+	LastStatus      string               `json:"last_status"`
+	LastFinished    *time.Time           `json:"last_finished"`
+	Paths           []string             `json:"paths,omitempty"`
+	SourceJobID     *int64               `json:"source_job_id,omitempty"`
+	RawSchedule     string               `json:"raw_schedule"`
+	Excludes        []string             `json:"excludes"`
+	ImageDisk       *int                 `json:"image_disk,omitempty"`
+	ImagePartitions []int                `json:"image_partitions,omitempty"`
+	Retention       repo.RetentionPolicy `json:"retention"`
+	Options         apiJobOptions        `json:"options"`
 	// RPO: the objective in hours, whether it is met and the newest good
 	// backup.
 	RPOHours       int        `json:"rpo_hours,omitempty"`
@@ -269,7 +276,7 @@ func toAPIAgent(a Agent) apiAgent {
 func toAPIJob(j Job) apiJob {
 	x := apiJob{ID: j.ID, Name: j.Name, Kind: j.Kind, AgentID: j.AgentID, Agent: j.Hostname, TargetID: j.TargetID, Target: j.TargetName,
 		Enabled: j.Enabled, Schedule: DescribeSchedule(j.Schedule), LastStatus: deref(j.LastStatus), LastFinished: j.LastFinished,
-		Paths: j.Paths, SourceJobID: j.SourceJobID}
+		Paths: j.Paths, SourceJobID: j.SourceJobID, RawSchedule: j.Schedule, Excludes: j.Excludes, ImageDisk: j.ImageDisk, ImagePartitions: j.ImagePartitions, Retention: j.Retention, Options: publicJobOptions(j.Options)}
 	if j.Enabled {
 		if n := NextRun(j.Schedule, time.Now()); !n.IsZero() {
 			x.NextRun = &n
@@ -434,6 +441,8 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	}))
 	s.registerAPIMore(mux)
 	s.registerAPIProvision(mux)
+	s.registerAPIJobs(mux)
+	s.registerAPITargets(mux)
 }
 
 // ---- token management pages (My account)
