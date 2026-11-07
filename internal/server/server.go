@@ -80,7 +80,9 @@ type Server struct {
 	// image started on it ("" otherwise).
 	UpdatedFrom string
 
-	pages map[string]map[string]*template.Template // language -> page -> template
+	pagesMu     sync.Mutex
+	pages       map[string]map[string]*template.Template // language -> page -> template
+	pageSources map[string]map[string]string
 	// Notifier is triggered when a run finishes (optional).
 	Notifier *Notifier
 	cache    *repoCache
@@ -307,38 +309,53 @@ func fileExists(name string) bool {
 
 func (s *Server) loadTemplates() error {
 	s.pages = map[string]map[string]*template.Template{}
+	s.pageSources = map[string]map[string]string{}
 	entries, err := fs.ReadDir(templateFS, "templates")
 	if err != nil {
 		return err
 	}
-	// One set per language: T and the text helpers are bound to it.
 	for _, l := range languages {
 		s.pages[l.Code] = map[string]*template.Template{}
+		s.pageSources[l.Code] = map[string]string{}
 		for _, e := range entries {
 			name := e.Name()
-			if e.IsDir() {
-				continue // docs/<language>: translated guide pages
-			}
-			// Files starting with "_" hold templates shared by several pages.
-			if name == "layout.html" || strings.HasPrefix(name, "_") {
+			if e.IsDir() || name == "layout.html" || strings.HasPrefix(name, "_") {
 				continue
 			}
 			src := "templates/" + name
-			// The user guide is translated page by page; a page without a
-			// translation is shown in English.
 			if strings.HasPrefix(name, "doc_") && l.Code != "en" {
 				if tr := "templates/docs/" + l.Code + "/" + name; fileExists(tr) {
 					src = tr
 				}
 			}
-			t, err := template.New("layout.html").Funcs(funcs).Funcs(langFuncs(l)).ParseFS(templateFS, "templates/layout.html", "templates/_*.html", src)
-			if err != nil {
-				return fmt.Errorf("template %s: %w", src, err)
-			}
-			s.pages[l.Code][strings.TrimSuffix(name, ".html")] = t
+			s.pageSources[l.Code][strings.TrimSuffix(name, ".html")] = src
 		}
 	}
-	return nil
+	// Parse on first use, bounded by the embedded pages and supported
+	// languages. Most per-organization consoles use only a few pages.
+	_, err = s.pageTemplate("en", "login")
+	return err
+}
+
+func (s *Server) pageTemplate(lang, page string) (*template.Template, error) {
+	s.pagesMu.Lock()
+	defer s.pagesMu.Unlock()
+	if s.pageSources[lang] == nil {
+		lang = "en"
+	}
+	if t := s.pages[lang][page]; t != nil {
+		return t, nil
+	}
+	src := s.pageSources[lang][page]
+	if src == "" {
+		return nil, fmt.Errorf("unknown page %q", page)
+	}
+	t, err := template.New("layout.html").Funcs(funcs).Funcs(langFuncs(languageByCode(lang))).ParseFS(templateFS, "templates/layout.html", "templates/_*.html", src)
+	if err != nil {
+		return nil, fmt.Errorf("template %s: %w", src, err)
+	}
+	s.pages[lang][page] = t
+	return t, nil
 }
 
 // Handler returns the HTTP handler for UI and agent API.
@@ -588,13 +605,14 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, d p
 		s.noteConsoleURL(r)
 	}
 	lang := requestLanguage(r)
-	t, ok := s.pages[lang.Code][page]
+	t, templateErr := s.pageTemplate(lang.Code, page)
 	if page == "login" {
 		if c := s.ssoSettings(r.Context()); c.Protocol != "" {
 			d.SSO = c.label()
 		}
 	}
-	if !ok {
+	if templateErr != nil {
+		s.log.Error("template", "err", templateErr)
 		http.Error(w, "unknown page", http.StatusInternalServerError)
 		return
 	}

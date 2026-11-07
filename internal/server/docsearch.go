@@ -51,14 +51,10 @@ func (s *Server) docSections(lang string) []docSection {
 		return idx
 	}
 	var idx []docSection
-	pages := s.pages[lang]
-	if pages == nil {
-		pages = s.pages["en"]
-	}
 	{
 		for _, p := range docPages {
-			t := pages["doc_"+p.Slug]
-			if t == nil {
+			t, err := s.pageTemplate(lang, "doc_"+p.Slug)
+			if err != nil {
 				continue
 			}
 			var b bytes.Buffer
