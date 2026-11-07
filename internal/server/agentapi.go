@@ -127,6 +127,17 @@ func (s *Server) handlePoll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) toAPIRun(ctx context.Context, run *Run) (*api.Run, error) {
+	if isBackupKind(run.Kind) && run.JobID != nil {
+		if j, err := s.store.GetJob(ctx, *run.JobID); err == nil {
+			a, err := s.store.GetAgent(ctx, run.AgentID)
+			if err != nil {
+				return nil, err
+			}
+			if err := checkExtendedJobOptions(a, j); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if run.Kind == api.KindAgentUpdate {
 		ar := &api.Run{ID: run.ID, Kind: run.Kind}
 		return ar, s.addUpdate(run, ar)
@@ -187,6 +198,10 @@ func (s *Server) toAPIRun(ctx context.Context, run *Run) (*api.Run, error) {
 			}
 		}
 		ar.ImagePartitions = run.ImagePartitions
+		if len(ar.ImageDisks) > 0 {
+			ar.ImageDisk = imaging.AllDisks
+			ar.ImagePartitions = nil
+		}
 	case api.KindVMFileRestore:
 		ar.SnapshotID = run.SnapshotID
 		var o api.VMFileRestore

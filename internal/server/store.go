@@ -280,6 +280,9 @@ func (s *Store) EnrollAgent(ctx context.Context, req api.EnrollRequest) (api.Enr
 		return api.EnrollResponse{}, err
 	}
 	defer tx.Rollback(context.WithoutCancel(ctx)) // rollback also returns the token's use on any failure
+	if _, err := tx.Exec(ctx, `INSERT INTO console_limits(id) VALUES(TRUE) ON CONFLICT DO NOTHING`); err != nil {
+		return api.EnrollResponse{}, err
+	}
 	var maxAgents *int64
 	if err := tx.QueryRow(ctx, `SELECT max_agents FROM console_limits WHERE id FOR UPDATE`).Scan(&maxAgents); err != nil {
 		return api.EnrollResponse{}, err

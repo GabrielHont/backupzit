@@ -134,6 +134,9 @@ func (s *Server) registerAPIRecovery(mux *http.ServeMux) {
 		paths := make([]string, 0, len(req.Paths))
 		all := false
 		for _, p := range req.Paths {
+			if p == "" {
+				return nil, apiErr(400, "paths must not contain empty strings (use / for the whole backup)")
+			}
 			p, err = publicSnapshotPath(p)
 			if err != nil {
 				return nil, err

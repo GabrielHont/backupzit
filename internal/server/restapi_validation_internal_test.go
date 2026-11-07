@@ -7,7 +7,7 @@ import (
 )
 
 func TestPublicJSONValidation(t *testing.T) {
-	for _, body := range []string{`{"unknown":1}`, `{"name":`, `{} {}`, `[]`, `null`} {
+	for _, body := range []string{`{"unknown":1}`, `{"name":`, `{} {}`, `[]`, `null`, `{"name":null}`} {
 		r := httptest.NewRequest("POST", "/", strings.NewReader(body))
 		r.Header.Set("Content-Type", "application/json")
 		var req struct {

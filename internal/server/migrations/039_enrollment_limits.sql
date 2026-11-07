@@ -13,4 +13,5 @@ CREATE TABLE console_limits (
     id BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
     max_agents BIGINT CHECK (max_agents >= 0)
 );
-INSERT INTO console_limits(id) VALUES(TRUE);
+-- The singleton is inserted on first enrollment/PUT. Keeping the schema
+-- unseeded also lets console backup restoration COPY its saved row verbatim.

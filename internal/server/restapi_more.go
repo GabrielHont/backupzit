@@ -102,6 +102,9 @@ func (s *Server) registerAPIMore(mux *http.ServeMux) {
 			if err != nil {
 				return nil, err
 			}
+			if j.GroupID != nil {
+				return nil, apiErr(409, "%s", errGroupMember)
+			}
 			// With four-eyes approval a disabled job needs a second user,
 			// which only the console can ask for.
 			if !x.enabled && s.store.fourEyes(r.Context()) {

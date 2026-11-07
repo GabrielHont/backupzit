@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"time"
 
@@ -24,6 +25,9 @@ func readAPIJSON(r *http.Request, dst any) error {
 	if len(raw) == 0 || raw[0] != '{' {
 		return apiErr(400, "request must be a JSON object")
 	}
+	if err := rejectNullScalars(raw, reflect.TypeOf(dst)); err != nil {
+		return err
+	}
 	if err := d.Decode(new(any)); err != io.EOF {
 		return apiErr(http.StatusBadRequest, "request must contain exactly one JSON object")
 	}
@@ -31,6 +35,60 @@ func readAPIJSON(r *http.Request, dst any) error {
 	fields.DisallowUnknownFields()
 	if err := fields.Decode(dst); err != nil {
 		return apiErr(400, "invalid JSON request: %s", err)
+	}
+	return nil
+}
+
+// encoding/json treats null scalar fields as a no-op, which is unsafe for
+// prefilled defaults such as ttlHours or TLS. Nullable pointers/slices and
+// explicit RawMessage union fields retain their normal JSON semantics.
+func rejectNullScalars(raw json.RawMessage, t reflect.Type) error {
+	if t == reflect.TypeFor[json.RawMessage]() {
+		return nil
+	}
+	if string(raw) == "null" {
+		switch t.Kind() {
+		case reflect.Pointer, reflect.Map, reflect.Slice, reflect.Interface:
+			return nil
+		}
+		return apiErr(400, "null is not allowed for %s", t)
+	}
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch t.Kind() {
+	case reflect.Struct:
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) != nil {
+			return nil
+		}
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			name := strings.Split(f.Tag.Get("json"), ",")[0]
+			if name == "-" {
+				continue
+			}
+			if name == "" {
+				name = f.Name
+			}
+			for k, v := range fields {
+				if strings.EqualFold(k, name) {
+					if err := rejectNullScalars(v, f.Type); err != nil {
+						return apiErr(400, "%s: %s", name, err)
+					}
+				}
+			}
+		}
+	case reflect.Slice:
+		var values []json.RawMessage
+		if json.Unmarshal(raw, &values) != nil {
+			return nil
+		}
+		for _, v := range values {
+			if err := rejectNullScalars(v, t.Elem()); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

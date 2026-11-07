@@ -113,8 +113,27 @@ func TestAPITargetsAndJobs(t *testing.T) {
 	}
 	for i, selection := range []string{`"image_disk":-1`, `"options":{"image_disks":[0,2],"vss":false}`} {
 		b := fmt.Sprintf(`{"kind":"image","agent_id":%d,"target_id":%d,"name":"Image %d",%s}`, win.ID, tid, i, selection)
-		if code, b := apiJSONCall(t, e, op, "POST", "/api/v1/jobs", b); code != 201 {
+		code, b := apiJSONCall(t, e, op, "POST", "/api/v1/jobs", b)
+		if code != 201 {
 			t.Fatalf("image: %d %s", code, b)
+		}
+		var created struct{ ID int64 }
+		if err := json.Unmarshal([]byte(b), &created); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.store.QueueBackup(e.ctx, created.ID, "api"); err != nil {
+			t.Fatal(err)
+		}
+		code, b = apiJSONCall(t, e, wr.AgentUUID+":"+wr.Secret, "POST", "/api/agent/poll", `{"hostname":"windows","os":"Windows 11","arch":"amd64","version":"0.47.4","instance":"image-api-test"}`)
+		var poll api.PollResponse
+		if code != 200 || json.Unmarshal([]byte(b), &poll) != nil || poll.Run == nil {
+			t.Fatalf("image dispatch: %d %s", code, b)
+		}
+		if i == 1 && (len(poll.Run.ImageDisks) != 2 || poll.Run.VSS == nil || *poll.Run.VSS || len(poll.Run.ImagePartitions) != 0) {
+			t.Fatalf("lost disk list or VSS override: %+v", poll.Run)
+		}
+		if err := e.store.FinishRun(e.ctx, win.ID, poll.Run.ID, api.RunResult{Status: api.StatusFailed, Message: "dispatch tested"}); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

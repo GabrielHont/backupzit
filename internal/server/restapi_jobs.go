@@ -74,6 +74,9 @@ func readJobMutation(r *http.Request, old Job, create bool) (Job, error) {
 	if err := readAPIJSON(r, &fields); err != nil {
 		return Job{}, err
 	}
+	if create && fields["retention"] != nil {
+		q.Retention = repo.RetentionPolicy{}
+	}
 	for _, key := range []string{"kind", "agent_id", "target_id", "name", "schedule", "enabled", "retention", "options"} {
 		if v, ok := fields[key]; ok && string(v) == "null" {
 			return Job{}, apiErr(400, "%s cannot be null", key)

@@ -66,6 +66,9 @@ func (s *Store) revokeEnrollmentToken(ctx context.Context, id int64) error {
 func (s *Store) consoleLimits(ctx context.Context) (ConsoleLimits, error) {
 	var l ConsoleLimits
 	err := s.db.QueryRow(ctx, `SELECT max_agents FROM console_limits WHERE id`).Scan(&l.MaxAgents)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ConsoleLimits{}, nil
+	}
 	return l, err
 }
 
@@ -73,6 +76,6 @@ func (s *Store) setConsoleLimits(ctx context.Context, l ConsoleLimits) error {
 	if l.MaxAgents != nil && *l.MaxAgents < 0 {
 		return errors.New("maxAgents must be non-negative or null (unlimited)")
 	}
-	_, err := s.db.Exec(ctx, `UPDATE console_limits SET max_agents=$1 WHERE id`, l.MaxAgents)
+	_, err := s.db.Exec(ctx, `INSERT INTO console_limits(id,max_agents) VALUES(TRUE,$1) ON CONFLICT(id) DO UPDATE SET max_agents=excluded.max_agents`, l.MaxAgents)
 	return err
 }
