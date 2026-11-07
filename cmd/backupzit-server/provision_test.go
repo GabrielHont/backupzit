@@ -1,11 +1,28 @@
 package main
 
 import (
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestEmptyTokenNameCLI(t *testing.T) {
+	args, flags := os.Args, flag.CommandLine
+	t.Cleanup(func() { os.Args = args; flag.CommandLine = flags })
+	for _, name := range []string{"", " "} {
+		flag.CommandLine = flag.NewFlagSet("backupzit-server", flag.ContinueOnError)
+		data := filepath.Join(t.TempDir(), "must-not-start")
+		os.Args = []string{"backupzit-server", "--create-api-token", name, "--data-dir", data, "--db", ""}
+		if err := run(); err == nil || !strings.Contains(err.Error(), "name") {
+			t.Fatalf("empty token name entered normal startup: %v", err)
+		}
+		if _, err := os.Stat(data); !os.IsNotExist(err) {
+			t.Fatal("invalid provisioning command wrote a data directory")
+		}
+	}
+}
 
 func TestProvisionTokenFlags(t *testing.T) {
 	for _, role := range []string{"admin", "operator", "restore", "viewer"} {

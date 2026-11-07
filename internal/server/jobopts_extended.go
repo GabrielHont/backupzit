@@ -16,7 +16,7 @@ func checkExtendedJobOptions(a Agent, j Job) error {
 		return fmt.Errorf("VSS overrides, disk lists and yearly retention require an updated agent advertising job-options-v1; upgrade the fork agent and wait for its next poll")
 	}
 	windows := strings.HasPrefix(strings.ToLower(a.OS), "windows")
-	if (j.Kind == JobImage || j.Options.VSS != nil) && !windows {
+	if (len(j.Options.ImageDisks) > 0 || j.Options.VSS != nil) && !windows {
 		return errors.New("disk images and VSS options require a Windows agent")
 	}
 	if len(j.Options.ImageDisks) > 0 {

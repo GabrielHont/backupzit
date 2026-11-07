@@ -953,6 +953,10 @@ func (s *Server) handleTargetCreate(w http.ResponseWriter, r *http.Request, _ st
 func (s *Server) handleTargetDelete(w http.ResponseWriter, r *http.Request, _ string) {
 	id, _ := pathID(r)
 	if err := s.deleteStorageTarget(r, id); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			http.NotFound(w, r)
+			return
+		}
 		if errors.Is(err, errApprovalPending) {
 			redirectMsg(w, r, "/targets", err.Error())
 		} else {
@@ -1172,6 +1176,14 @@ func (s *Server) handleJobEnable(enabled bool) func(http.ResponseWriter, *http.R
 func (s *Server) handleJobDelete(w http.ResponseWriter, r *http.Request, _ string) {
 	id, _ := pathID(r)
 	back := fmt.Sprintf("/jobs/%d", id)
+	j, err := s.store.GetJob(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if s.memberOfGroup(w, r, j) {
+		return
+	}
 	if err := s.deleteBackupJob(r, id); err != nil {
 		if errors.Is(err, errApprovalPending) {
 			redirectMsg(w, r, back, err.Error())

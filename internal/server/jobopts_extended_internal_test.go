@@ -11,6 +11,11 @@ import (
 )
 
 func TestExtendedJobOptions(t *testing.T) {
+	// Legacy UI/store callers use disk inventory without an OS override;
+	// only the new API requires a Windows identity for every image job.
+	if err := checkExtendedJobOptions(Agent{OS: "Linux"}, Job{Kind: JobImage, ImageDisk: new(0)}); err != nil {
+		t.Fatalf("changed legacy image validation: %v", err)
+	}
 	a := Agent{OS: "Windows 11", Version: "0.47.3", Capabilities: []string{api.CapabilityJobOptions}}
 	j := Job{Kind: JobImage, Options: JobOptions{VSS: new(false), ImageDisks: []int{0, 2}}, Retention: repo.RetentionPolicy{KeepYearly: 5}}
 	if err := checkExtendedJobOptions(a, j); err != nil {

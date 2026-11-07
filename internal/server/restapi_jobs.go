@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/max-zit/backupzit/internal/repo"
@@ -162,6 +163,15 @@ func (s *Server) registerAPIJobs(mux *http.ServeMux) {
 		j, err := readJobMutation(r, Job{}, true)
 		if err != nil {
 			return nil, err
+		}
+		if j.Kind == JobImage {
+			a, err := s.store.GetAgent(r.Context(), j.AgentID)
+			if err != nil {
+				return nil, apiErr(400, "unknown agent")
+			}
+			if !strings.HasPrefix(strings.ToLower(a.OS), "windows") {
+				return nil, apiErr(400, "disk image jobs require a Windows agent")
+			}
 		}
 		id, _, err := s.createBackupJob(r, j)
 		if err != nil {

@@ -67,10 +67,16 @@ func run() error {
 	showInitial := flag.Bool("initial-password", false, "print the generated first password of user 'admin' (while it is still in use) and exit")
 	restorePre := flag.String("restore-pre-upgrade", "", "container image: load the copy of the console made before an update (a folder in <data-dir>/pre-upgrade) and exit; run it with the image of the version the copy was made from")
 	flag.Parse()
+	createTokenRequested := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "create-api-token" {
+			createTokenRequested = true
+		}
+	})
 	if *adminPasswordFile != "" && *setPassword != "" {
 		return errors.New("use --admin-password-file for initialization, or --set-admin-password to reset an existing password")
 	}
-	if *createAPIToken != "" {
+	if createTokenRequested {
 		if err := validateTokenFlags(*createAPIToken, *tokenRole, *tokenDays); err != nil {
 			return err
 		}

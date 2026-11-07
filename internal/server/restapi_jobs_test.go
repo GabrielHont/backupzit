@@ -51,6 +51,10 @@ func TestAPITargetsAndJobs(t *testing.T) {
 	if code, _ := apiJSONCall(t, e, view, "POST", "/api/v1/jobs", jobBody); code != 403 {
 		t.Fatal("viewer created job")
 	}
+	linuxImage := fmt.Sprintf(`{"kind":"image","name":"Invalid Linux image","agent_id":%d,"target_id":%d,"image_disk":0}`, ag.ID, target.ID)
+	if code, b := apiJSONCall(t, e, op, "POST", "/api/v1/jobs", linuxImage); code != 400 {
+		t.Fatalf("API accepted Linux image: %d %s", code, b)
+	}
 	code, body = apiJSONCall(t, e, op, "POST", "/api/v1/jobs", jobBody)
 	var job struct{ ID int64 }
 	if json.Unmarshal([]byte(body), &job) != nil || code != 201 || job.ID == 0 {

@@ -8,7 +8,7 @@ import (
 	"github.com/max-zit/backupzit/internal/repo"
 )
 
-var errApprovalPending = errors.New("waiting for approval: another user must approve this change under Approvals in the console")
+var errApprovalPending = errors.New("Waiting for approval: another user must approve this change under Approvals.")
 var errGroupMember = errors.New("this job belongs to a group; change the group in the console")
 var errCommandPermission = errors.New("only administrators may change commands that run on an agent")
 
