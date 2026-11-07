@@ -14,3 +14,5 @@ Changes made by Unirea Cloud, starting 7 November 2026:
   including encryption, audit, command permissions and four-eyes approvals.
 - Extend the agent protocol with per-job Windows VSS and disk selections, and
   add yearly retention alongside the existing retention rules.
+- Expose snapshot file listing, streaming file/ZIP downloads and agent
+  restoration; add stable run cursors with filters applied before the limit.

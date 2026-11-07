@@ -887,17 +887,25 @@ func (s *Store) GetRun(ctx context.Context, id int64) (Run, error) {
 
 // RunFilter narrows ListRuns.
 type RunFilter struct {
-	JobID   int64
-	AgentID int64
-	Limit   int
+	JobID     int64
+	AgentID   int64
+	Limit     int
+	BeforeID  int64
+	Status    string
+	OrderByID bool
 }
 
 func (s *Store) ListRuns(ctx context.Context, f RunFilter) ([]Run, error) {
 	if f.Limit <= 0 {
 		f.Limit = 100
 	}
-	q := `SELECT ` + runCols + runFrom + ` WHERE ($1::bigint=0 OR r.job_id=$1) AND ($2::bigint=0 OR r.agent_id=$2) ORDER BY r.queued_at DESC LIMIT $3`
-	rows, err := s.db.Query(ctx, q, f.JobID, f.AgentID, f.Limit)
+	order := `r.queued_at DESC, r.id DESC`
+	if f.OrderByID || f.BeforeID > 0 {
+		order = `r.id DESC`
+	}
+	q := `SELECT ` + runCols + runFrom + ` WHERE ($1::bigint=0 OR r.job_id=$1) AND ($2::bigint=0 OR r.agent_id=$2)
+		AND ($4::bigint=0 OR r.id<$4) AND ($5::text='' OR r.status=$5) ORDER BY ` + order + ` LIMIT $3`
+	rows, err := s.db.Query(ctx, q, f.JobID, f.AgentID, f.Limit, f.BeforeID, f.Status)
 	if err != nil {
 		return nil, err
 	}

@@ -374,12 +374,17 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 		if limit <= 0 || limit > 1000 {
 			limit = 100
 		}
-		list, err := s.store.ListRuns(r.Context(), RunFilter{JobID: job, AgentID: agent, Limit: limit})
+		var before int64
+		if raw := q.Get("before"); raw != "" {
+			var err error
+			before, err = strconv.ParseInt(raw, 10, 64)
+			if err != nil || before <= 0 {
+				return nil, apiErr(400, "before must be a positive run ID")
+			}
+		}
+		list, err := s.store.ListRuns(r.Context(), RunFilter{JobID: job, AgentID: agent, Limit: limit, BeforeID: before, Status: q.Get("status"), OrderByID: true})
 		out := []apiRun{}
 		for _, x := range list {
-			if st := q.Get("status"); st != "" && x.Status != st {
-				continue
-			}
 			out = append(out, toAPIRunJSON(x))
 		}
 		return out, err
@@ -443,6 +448,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	s.registerAPIProvision(mux)
 	s.registerAPIJobs(mux)
 	s.registerAPITargets(mux)
+	s.registerAPIRecovery(mux)
 }
 
 // ---- token management pages (My account)

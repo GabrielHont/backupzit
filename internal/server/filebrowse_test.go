@@ -83,6 +83,22 @@ func TestFileBrowse(t *testing.T) {
 	docs := strings.Join(append(append([]string{}, comps...), "docs"), "/")
 	admin := newClient(t, e)
 	admin.login("admin", "admin-pass-123")
+	apiRestore := apiToken(t, admin, "restore")
+	apiBase := fmt.Sprintf("/api/v1/runs/%d", runID)
+	if code, b := apiJSONCall(t, e, apiRestore, "GET", apiBase+"/files?path="+url.QueryEscape(docs), ""); code != 200 || !strings.Contains(b, `"name":"report.txt"`) || !strings.Contains(b, `"type":"file"`) {
+		t.Fatalf("API files: %d %s", code, b)
+	}
+	if code, b := apiJSONCall(t, e, apiRestore, "GET", apiBase+"/download?path="+url.QueryEscape(docs+"/report.txt"), ""); code != 200 || b != "quarterly report" {
+		t.Fatalf("API download: %d %s", code, b)
+	}
+	if code, b := apiJSONCall(t, e, apiRestore, "GET", apiBase+"/download?path="+url.QueryEscape(docs), ""); code != 200 {
+		t.Fatalf("API ZIP: %d %s", code, b)
+	} else if _, err := zip.NewReader(strings.NewReader(b), int64(len(b))); err != nil {
+		t.Fatal(err)
+	}
+	if code, b := apiJSONCall(t, e, apiRestore, "POST", apiBase+"/restore", fmt.Sprintf(`{"paths":["/%s/report.txt"],"target":{"directory":"C:\\Restore"}}`, docs)); code != 202 || !strings.Contains(b, `"kind":"restore"`) {
+		t.Fatalf("API restore: %d %s", code, b)
+	}
 	_, _, page := admin.do("GET", fmt.Sprintf("/runs/%d", runID), nil)
 	if !strings.Contains(page, fmt.Sprintf("/runs/%d/files", runID)) {
 		t.Error("run page lacks the file browser link")

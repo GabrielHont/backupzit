@@ -1,15 +1,12 @@
 package server
 
 import (
-	"archive/zip"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"path"
-	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +27,7 @@ type fileEntry struct {
 	IsDir   bool
 	Size    uint64
 	ModTime time.Time
+	Type    string
 }
 
 func browsableFileRun(run Run) bool {
@@ -113,7 +111,7 @@ func listDir(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, p strin
 	out := make([]fileEntry, 0, len(t.Nodes))
 	for _, x := range t.Nodes {
 		out = append(out, fileEntry{Name: x.Name, Path: strings.Join(append(append([]string{}, comps...), x.Name), "/"),
-			IsDir: x.Type == repo.NodeDir, Size: x.Size, ModTime: x.ModTime})
+			IsDir: x.Type == repo.NodeDir, Size: x.Size, ModTime: x.ModTime, Type: x.Type})
 	}
 	return out, nil
 }
@@ -212,104 +210,13 @@ func (s *Server) handleFileDownload(w http.ResponseWriter, r *http.Request, user
 		redirectErr(w, r, fileBack(run, dir), errors.New("tick the files and folders to download"))
 		return
 	}
-	repoR, sn, err := s.fileSnapshot(r.Context(), run)
+	started, err := s.downloadFiles(w, r, run, sel)
 	if err != nil {
+		if started {
+			s.log.Error("download", "run", run.ID, "err", err)
+			panic(http.ErrAbortHandler)
+		}
 		redirectErr(w, r, fileBack(run, dir), err)
-		return
-	}
-	ctx := context.WithoutCancel(r.Context())
-	s.audit(r, "restore.download", "%d paths from backup #%d", len(sel), run.ID)
-	writeFile := func(dst io.Writer, n *repo.Node) error {
-		for _, id := range n.Content {
-			b, err := repoR.LoadBlob(ctx, repo.DataBlob, id)
-			if err != nil {
-				return err
-			}
-			if _, err := dst.Write(b); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if len(sel) == 1 {
-		if _, n, err := lookupNode(ctx, repoR, sn.Tree, snapshotComps(sel[0])); err == nil && n != nil && n.Type == repo.NodeSymlink {
-			name := n.Name
-			if n, err = followLink(ctx, repoR, sn.Tree, snapshotComps(sel[0]), n); err != nil {
-				redirectErr(w, r, fileBack(run, dir), err)
-				return
-			}
-			if n.Type == repo.NodeFile {
-				cp := *n
-				cp.Name = name
-				w.Header().Set("Content-Type", "application/octet-stream")
-				w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(cp.Name))
-				w.Header().Set("Content-Length", strconv.FormatUint(cp.Size, 10))
-				_ = writeFile(w, &cp)
-				return
-			}
-		}
-		if _, n, err := lookupNode(ctx, repoR, sn.Tree, snapshotComps(sel[0])); err == nil && n != nil && n.Type == repo.NodeFile {
-			w.Header().Set("Content-Type", "application/octet-stream")
-			w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(n.Name))
-			w.Header().Set("Content-Length", strconv.FormatUint(n.Size, 10))
-			_ = writeFile(w, n)
-			return
-		}
-	}
-	name := fmt.Sprintf("backup%d-%s.zip", run.ID, time.Now().Format("20060102-1504"))
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(name))
-	zw := zip.NewWriter(w)
-	defer zw.Close()
-	var add func(rel string, comps []string, n *repo.Node) error
-	add = func(rel string, comps []string, n *repo.Node) error {
-		if err := r.Context().Err(); err != nil {
-			return err
-		}
-		switch n.Type {
-		case repo.NodeDir:
-			if n.Subtree == nil {
-				return nil
-			}
-			t, err := repoR.LoadTree(ctx, *n.Subtree)
-			if err != nil {
-				return nil
-			}
-			if len(t.Nodes) == 0 {
-				_, _ = zw.CreateHeader(&zip.FileHeader{Name: rel + "/", Modified: n.ModTime})
-			}
-			for i := range t.Nodes {
-				if err := add(path.Join(rel, t.Nodes[i].Name), append(append([]string{}, comps...), t.Nodes[i].Name), &t.Nodes[i]); err != nil {
-					return err
-				}
-			}
-		case repo.NodeFile:
-			zf, err := zw.CreateHeader(&zip.FileHeader{Name: rel, Method: zip.Deflate, Modified: n.ModTime})
-			if err != nil {
-				return err
-			}
-			return writeFile(zf, n)
-		case repo.NodeSymlink:
-			// A link to a file is stored as that file; links to folders are
-			// left out (they could loop).
-			if t, err := followLink(ctx, repoR, sn.Tree, comps, n); err == nil && t.Type == repo.NodeFile {
-				zf, err := zw.CreateHeader(&zip.FileHeader{Name: rel, Method: zip.Deflate, Modified: t.ModTime})
-				if err != nil {
-					return err
-				}
-				return writeFile(zf, t)
-			}
-		}
-		return nil // devices are not part of the archive
-	}
-	for _, sp := range sel {
-		_, n, err := lookupNode(ctx, repoR, sn.Tree, snapshotComps(sp))
-		if err != nil || n == nil {
-			continue
-		}
-		if add(n.Name, snapshotComps(sp), n) != nil {
-			return
-		}
 	}
 }
 
