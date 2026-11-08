@@ -984,6 +984,7 @@
   "Replication": "Репликация",
   "Report %s (%s): %s": "Отчёт %s (%s): %s",
   "Report a bug": "Сообщить об ошибке",
+  "Source code": "Исходный код",
   "Reports": "Отчёты",
   "Reports are emailed automatically with the CSV attached once each period is complete. Email must be configured under": "Отчёты автоматически отправляются по почте с вложенным CSV по окончании каждого периода. Почта должна быть настроена в разделе",
   "Repositories on this storage already in the console: %d.": "Репозитории в этом хранилище, уже известные консоли: %d.",

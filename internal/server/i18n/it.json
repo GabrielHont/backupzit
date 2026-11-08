@@ -984,6 +984,7 @@
   "Replication": "Replica",
   "Report %s (%s): %s": "Report %s (%s): %s",
   "Report a bug": "Segnala un bug",
+  "Source code": "Codice sorgente",
   "Reports": "Report",
   "Reports are emailed automatically with the CSV attached once each period is complete. Email must be configured under": "I report vengono inviati automaticamente via e-mail con il CSV allegato al termine di ogni periodo. L’e-mail deve essere configurata in",
   "Repositories on this storage already in the console: %d.": "Repository su questo storage già presenti nella console: %d.",

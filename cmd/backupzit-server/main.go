@@ -29,6 +29,10 @@ import (
 
 var version = "dev"
 
+// sourceURL is the Corresponding Source of this build (AGPLv3 section 13); a
+// modified build sets it with -ldflags "-X main.sourceURL=<repository>".
+var sourceURL = server.UpstreamSourceURL
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -252,6 +256,7 @@ func run() error {
 	}
 	srv.InitialPasswordFile = filepath.Join(*dataDir, "initial-admin-password.txt")
 	srv.Version = version
+	srv.SourceURL = sourceURL
 	srv.UpdatedFrom = updatedFrom
 	srv.LogFile = logPath
 	_ = os.MkdirAll(srv.DistDir, 0o755) // #nosec G301 -- public agent installers

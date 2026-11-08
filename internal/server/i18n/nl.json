@@ -984,6 +984,7 @@
   "Replication": "Replicatie",
   "Report %s (%s): %s": "Rapport %s (%s): %s",
   "Report a bug": "Fout melden",
+  "Source code": "Broncode",
   "Reports": "Rapporten",
   "Reports are emailed automatically with the CSV attached once each period is complete. Email must be configured under": "Rapporten worden na afloop van elke periode automatisch gemaild met de CSV als bijlage. E-mail moet zijn ingesteld onder",
   "Repositories on this storage already in the console: %d.": "Repository's op deze opslag die al in de console staan: %d.",

@@ -309,7 +309,7 @@ func pathInt(r *http.Request, name string) (int64, error) {
 func (s *Server) registerAPI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/status", s.api(PermView, func(w http.ResponseWriter, r *http.Request) (any, error) {
 		sum, err := s.store.Summary(r.Context())
-		return map[string]any{"version": s.Version, "agents": sum.Agents, "agents_online": sum.AgentsOnline, "jobs": sum.Jobs,
+		return map[string]any{"version": s.Version, "source_url": s.sourceURL(), "agents": sum.Agents, "agents_online": sum.AgentsOnline, "jobs": sum.Jobs,
 			"storage_targets": sum.Targets, "runs_24h": sum.Runs24h, "failed_24h": sum.Failed24h, "warnings_24h": sum.Warning24h,
 			"active_runs": sum.Running, "suspicious_unreviewed": sum.Suspicious,
 			"ok": sum.Failed24h == 0 && sum.Suspicious == 0 && sum.AgentsOnline == sum.Agents}, err

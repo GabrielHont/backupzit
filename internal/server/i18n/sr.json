@@ -984,6 +984,7 @@
   "Replication": "Replikacija",
   "Report %s (%s): %s": "Izveštaj %s (%s): %s",
   "Report a bug": "Prijavi grešku",
+  "Source code": "Izvorni kod",
   "Reports": "Izveštaji",
   "Reports are emailed automatically with the CSV attached once each period is complete. Email must be configured under": "Izveštaji se šalju emailom automatski sa CSV prilogom po završetku svakog perioda. Email mora biti podešen pod",
   "Repositories on this storage already in the console: %d.": "Repozitorijumi na ovom storage-u koji su već u konzoli: %d.",

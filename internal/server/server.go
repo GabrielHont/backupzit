@@ -73,6 +73,9 @@ type Server struct {
 	DistDir      string
 	PollInterval int
 	Version      string
+	// SourceURL is where users can get the source of this exact build (AGPLv3
+	// section 13). Builds of a modified console must point it at their fork.
+	SourceURL string
 	// LogFile is the server's rotated log file ("" when it logs to stdout
 	// only).
 	LogFile string
@@ -543,7 +546,9 @@ type pageData struct {
 	Flash   string
 	Error   string
 	Version string
-	Data    any
+	// SourceURL is the Corresponding Source of this build (set by render).
+	SourceURL string
+	Data      any
 	// Me is the signed-in user (set by render).
 	Me *User
 	// FourEyes and Approvals (pending requests) are set by render.
@@ -638,6 +643,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, d p
 		w.Header().Set("Cache-Control", "no-store")
 	}
 	d.Version = s.Version
+	d.SourceURL = s.sourceURL()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.Execute(w, d); err != nil {
 		s.log.Error("render", "page", page, "err", err)
@@ -1350,4 +1356,15 @@ func Shutdown(srv *http.Server) {
 // kindTitleEN names a run kind for people (English).
 func kindTitleEN(k string) string {
 	return map[string]string{"backup": "Backup", "restore": "Restore", "image-backup": "Image backup", "image-restore": "Image restore", "image-file-restore": "File restore from image", "copy": "Backup copy", "verify": "Restore test", "vm-backup": "VM backup", "vm-restore": "VM restore", "agent-update": "Agent update", "agent-log": "Agent log", "repo-check": "Data check", "repo-scan": "Find backups", "system-backup": "System backup", "system-restore": "System restore", "vm-file-restore": "File restore from VM", "vm-instant": "Instant VM recovery", "vm-instant-finish": "Instant recovery finish", "vm-instant-discard": "Instant recovery discard", "vm-replica": "Replication", "vm-replica-start": "Replica start", "sql-backup": "Database backup", "sql-log": "Database log backup", "sql-restore": "Database restore"}[k]
+}
+
+// UpstreamSourceURL is the source of unmodified BackupZit builds.
+const UpstreamSourceURL = "https://github.com/Max-Zit/backupzit"
+
+// sourceURL returns the source of this build, the upstream repository by default.
+func (s *Server) sourceURL() string {
+	if s.SourceURL != "" {
+		return s.SourceURL
+	}
+	return UpstreamSourceURL
 }

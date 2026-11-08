@@ -28,3 +28,7 @@ Changes made by Unirea Cloud, starting 7 November 2026:
   audit, retaining backups and history even without registered repositories.
 - Verify stable agent/run IDs and readable runs after job removal, and document
   unattended Windows MSI and Linux DEB/RPM installation with checksum checks.
+- Offer the Corresponding Source of the running build (AGPLv3 section 13):
+  a "Source code" link in the console footer and on signed-out pages, and
+  `source_url` in `GET /api/v1/status`. Modified builds set it with
+  `-ldflags "-X main.sourceURL=<repository>"`; the default is upstream.

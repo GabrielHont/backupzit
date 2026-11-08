@@ -984,6 +984,7 @@
   "Replication": "复制",
   "Report %s (%s): %s": "报告 %s（%s）：%s",
   "Report a bug": "报告错误",
+  "Source code": "源代码",
   "Reports": "报告",
   "Reports are emailed automatically with the CSV attached once each period is complete. Email must be configured under": "每个周期结束后，报告会自动通过电子邮件发送，并附带 CSV。必须先在此处配置电子邮件：",
   "Repositories on this storage already in the console: %d.": "此存储上已在控制台中的存储库：%d。",
