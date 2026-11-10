@@ -2353,6 +2353,13 @@
           },
           "hypervisor": {
             "$ref": "#/components/schemas/Hypervisor"
+          },
+          "disks": {
+            "type": "array",
+            "description": "Disk inventory of a Windows agent, for choosing what an image job copies.",
+            "items": {
+              "$ref": "#/components/schemas/AgentDisk"
+            }
           }
         },
         "required": [
@@ -3749,6 +3756,35 @@
           "memory_bytes"
         ],
         "additionalProperties": false
+      },
+      "AgentDisk": {
+        "type": "object",
+        "properties": {
+          "number": { "type": "integer" },
+          "model": { "type": "string" },
+          "size": { "type": "integer", "format": "int64" },
+          "style": { "type": "string" },
+          "system": { "type": "boolean", "description": "The disk holds the running Windows." },
+          "bus": { "type": "string", "description": "usb, sd, virtual-file, removable, or empty for internal disks." },
+          "in_all_disks": { "type": "boolean", "description": "An image job of all disks (image_disk -1) copies it." },
+          "partitions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "number": { "type": "integer" },
+                "size": { "type": "integer", "format": "int64" },
+                "role": { "type": "string", "enum": ["efi", "msr", "recovery", "data", "other"] },
+                "mount_points": { "type": "array", "items": { "type": "string" } },
+                "file_system": { "type": "string" },
+                "label": { "type": "string" },
+                "bootable": { "type": "boolean", "description": "Active partition of an MBR disk." }
+              },
+              "required": ["number", "size", "role"]
+            }
+          }
+        },
+        "required": ["number", "size", "style", "in_all_disks", "partitions"]
       },
       "Hypervisor": {
         "type": "object",

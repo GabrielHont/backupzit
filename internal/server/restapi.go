@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/max-zit/backupzit/internal/imaging"
 	"github.com/max-zit/backupzit/internal/repo"
 )
 
@@ -223,6 +224,63 @@ type apiAgent struct {
 	// Hypervisor is set for an agent on a Proxmox VE node or Hyper-V host:
 	// the virtual machines (and containers) a vm job of this agent can back up.
 	Hypervisor *apiHypervisor `json:"hypervisor,omitempty"`
+	// Disks is the disk inventory a Windows agent reports, for choosing what
+	// an image job copies: the disk with Windows, or every internal disk.
+	Disks []apiDisk `json:"disks,omitempty"`
+}
+
+type apiDisk struct {
+	Number int    `json:"number"`
+	Model  string `json:"model,omitempty"`
+	Size   uint64 `json:"size"`
+	Style  string `json:"style"`
+	// System: the disk holds the running Windows.
+	System bool `json:"system,omitempty"`
+	// Bus: "usb", "sd", "virtual-file", "removable", or "" for internal disks.
+	Bus string `json:"bus,omitempty"`
+	// InAllDisks: an image job of "all disks" (image_disk -1) copies it.
+	InAllDisks bool           `json:"in_all_disks"`
+	Partitions []apiPartition `json:"partitions"`
+}
+
+type apiPartition struct {
+	Number int    `json:"number"`
+	Size   uint64 `json:"size"`
+	// Role: efi, msr, recovery, data or other.
+	Role        string   `json:"role"`
+	MountPoints []string `json:"mount_points,omitempty"`
+	FileSystem  string   `json:"file_system,omitempty"`
+	Label       string   `json:"label,omitempty"`
+	// Bootable: the active partition of an MBR disk (where BIOS starts Windows).
+	Bootable bool `json:"bootable,omitempty"`
+}
+
+func toAPIDisks(a Agent) []apiDisk {
+	var out []apiDisk
+	for _, d := range a.Disks() {
+		x := apiDisk{Number: d.Number, Model: d.Model, Size: d.Size, Style: d.Style, System: d.System, Bus: d.Bus,
+			InAllDisks: imaging.InAllDisks(d), Partitions: []apiPartition{}}
+		for _, p := range d.Partitions {
+			x.Partitions = append(x.Partitions, apiPartition{Number: p.Number, Size: p.Length, Role: partitionRole(p),
+				MountPoints: p.MountPoints, FileSystem: p.FileSystem, Label: p.Label, Bootable: p.Bootable})
+		}
+		out = append(out, x)
+	}
+	return out
+}
+
+func partitionRole(p imaging.Partition) string {
+	switch p.Kind() {
+	case "EFI System":
+		return "efi"
+	case "Microsoft Reserved":
+		return "msr"
+	case "Recovery":
+		return "recovery"
+	case "Basic data", "NTFS/exFAT", "FAT32":
+		return "data"
+	}
+	return "other"
 }
 
 // apiHypervisor is the inventory a hypervisor agent reports, limited to the
@@ -317,7 +375,7 @@ func toAPIAgent(a Agent) apiAgent {
 	if caps == nil {
 		caps = []string{}
 	}
-	return apiAgent{a.ID, a.Name(), a.Hostname, a.OS + "/" + a.Arch, a.Version, a.Online(), a.LastSeen, a.Recovery, a.LocalIPs, a.RemoteAddr, a.EnrolledAt, max(a.MaxRuns, 1), a.EnrollmentTokenID, caps, toAPIHypervisor(a)}
+	return apiAgent{a.ID, a.Name(), a.Hostname, a.OS + "/" + a.Arch, a.Version, a.Online(), a.LastSeen, a.Recovery, a.LocalIPs, a.RemoteAddr, a.EnrolledAt, max(a.MaxRuns, 1), a.EnrollmentTokenID, caps, toAPIHypervisor(a), toAPIDisks(a)}
 }
 
 func toAPIJob(j Job) apiJob {
