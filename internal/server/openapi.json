@@ -2350,6 +2350,9 @@
           "name": {
             "type": "string",
             "description": "Custom display name, or reported hostname when no custom name has been set."
+          },
+          "hypervisor": {
+            "$ref": "#/components/schemas/Hypervisor"
           }
         },
         "required": [
@@ -2520,7 +2523,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "Existing jobs of all kinds are returned; mutations support files and image."
+            "description": "Existing jobs of all kinds are returned; mutations support files, image and vm (Proxmox VE nodes and Hyper-V hosts outside a failover cluster)."
           },
           "agent_id": {
             "type": "integer",
@@ -2643,9 +2646,11 @@
             "type": "string",
             "enum": [
               "files",
-              "image"
+              "image",
+              "vm"
             ],
-            "default": "files"
+            "default": "files",
+            "description": "vm: paths are [\"*\"] (all guests of the node, excludes allowed) or guest IDs from the agent hypervisor.guests; the agent must be a Proxmox VE node or a Hyper-V host outside a failover cluster."
           },
           "agent_id": {
             "type": "integer",
@@ -2730,9 +2735,11 @@
             "type": "string",
             "enum": [
               "files",
-              "image"
+              "image",
+              "vm"
             ],
-            "default": "files"
+            "default": "files",
+            "description": "vm: paths are [\"*\"] (all guests of the node, excludes allowed) or guest IDs from the agent hypervisor.guests; the agent must be a Proxmox VE node or a Hyper-V host outside a failover cluster."
           },
           "agent_id": {
             "type": "integer",
@@ -3695,6 +3702,86 @@
           "jobs",
           "uninstalled",
           "message"
+        ],
+        "additionalProperties": false
+      },
+      "Guest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Value a vm job names in paths: the Proxmox VMID, or the number BackupZit derives from a Hyper-V VM GUID."
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "description": "qemu or lxc; Hyper-V VMs report qemu."
+          },
+          "status": {
+            "type": "string"
+          },
+          "disk_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "memory_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "template": {
+            "type": "boolean"
+          },
+          "clustered": {
+            "type": "boolean",
+            "description": "A role of a Hyper-V failover cluster; backed up by a cluster job set up in the console."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "type",
+          "status",
+          "disk_bytes",
+          "memory_bytes"
+        ],
+        "additionalProperties": false
+      },
+      "Hypervisor": {
+        "type": "object",
+        "description": "Set for an agent on a Proxmox VE node or Hyper-V host: the guests on its own node.",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "proxmox",
+              "hyperv"
+            ]
+          },
+          "node": {
+            "type": "string"
+          },
+          "cluster": {
+            "type": "string",
+            "description": "Hyper-V failover cluster of the host, when any."
+          },
+          "version": {
+            "type": "string"
+          },
+          "guests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Guest"
+            }
+          }
+        },
+        "required": [
+          "platform",
+          "node",
+          "guests"
         ],
         "additionalProperties": false
       }

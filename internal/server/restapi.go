@@ -220,6 +220,47 @@ type apiAgent struct {
 	MaxRuns           int        `json:"max_runs"`
 	EnrollmentTokenID *int64     `json:"enrollment_token_id,omitempty"`
 	Capabilities      []string   `json:"capabilities"`
+	// Hypervisor is set for an agent on a Proxmox VE node or Hyper-V host:
+	// the virtual machines (and containers) a vm job of this agent can back up.
+	Hypervisor *apiHypervisor `json:"hypervisor,omitempty"`
+}
+
+// apiHypervisor is the inventory a hypervisor agent reports, limited to the
+// guests on its own node.
+type apiHypervisor struct {
+	Platform string     `json:"platform"` // proxmox | hyperv
+	Node     string     `json:"node"`
+	Cluster  string     `json:"cluster,omitempty"` // Hyper-V failover cluster
+	Version  string     `json:"version,omitempty"`
+	Guests   []apiGuest `json:"guests"`
+}
+
+type apiGuest struct {
+	// ID is the value a vm job names in paths (Proxmox VMID, or the number
+	// BackupZit derives from a Hyper-V VM GUID).
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Type        string `json:"type"` // qemu | lxc (Hyper-V VMs report qemu)
+	Status      string `json:"status"`
+	DiskBytes   uint64 `json:"disk_bytes"`
+	MemoryBytes uint64 `json:"memory_bytes"`
+	Template    bool   `json:"template,omitempty"`
+	// Clustered: a role of a Hyper-V failover cluster, backed up through a
+	// cluster job in the console rather than from this host.
+	Clustered bool `json:"clustered,omitempty"`
+}
+
+func toAPIHypervisor(a Agent) *apiHypervisor {
+	inv := a.PVE()
+	if inv == nil {
+		return nil
+	}
+	out := &apiHypervisor{Platform: a.Platform(), Node: inv.Node, Cluster: a.HVCluster(), Version: inv.Version, Guests: []apiGuest{}}
+	for _, g := range a.LocalGuests() {
+		out.Guests = append(out.Guests, apiGuest{ID: strconv.Itoa(g.VMID), Name: g.Name, Type: g.Type, Status: g.Status,
+			DiskBytes: g.MaxDisk, MemoryBytes: g.MaxMem, Template: g.Template, Clustered: g.Clustered})
+	}
+	return out
 }
 
 type apiJob struct {
@@ -276,7 +317,7 @@ func toAPIAgent(a Agent) apiAgent {
 	if caps == nil {
 		caps = []string{}
 	}
-	return apiAgent{a.ID, a.Name(), a.Hostname, a.OS + "/" + a.Arch, a.Version, a.Online(), a.LastSeen, a.Recovery, a.LocalIPs, a.RemoteAddr, a.EnrolledAt, max(a.MaxRuns, 1), a.EnrollmentTokenID, caps}
+	return apiAgent{a.ID, a.Name(), a.Hostname, a.OS + "/" + a.Arch, a.Version, a.Online(), a.LastSeen, a.Recovery, a.LocalIPs, a.RemoteAddr, a.EnrolledAt, max(a.MaxRuns, 1), a.EnrollmentTokenID, caps, toAPIHypervisor(a)}
 }
 
 func toAPIJob(j Job) apiJob {

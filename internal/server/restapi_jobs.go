@@ -1,6 +1,7 @@
 package server
 
 import (
+	"strconv"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -103,8 +104,21 @@ func readJobMutation(r *http.Request, old Job, create bool) (Job, error) {
 	if err := readAPIJSON(clone, &q); err != nil {
 		return Job{}, err
 	}
-	if q.Kind != JobFiles && q.Kind != JobImage {
-		return Job{}, apiErr(400, "only files and image jobs can be managed through this endpoint")
+	if q.Kind != JobFiles && q.Kind != JobImage && q.Kind != JobVM {
+		return Job{}, apiErr(400, "only files, image and vm jobs can be managed through this endpoint")
+	}
+	if q.Kind == JobVM {
+		// Proxmox VE nodes and single Hyper-V hosts. Failover clusters, VMware,
+		// replicas and job groups keep the options only the console form sets.
+		if !create && (old.VMwareHostID != nil || old.Options.HVCluster != "" || old.Options.ReplicaAgentID != 0 || old.GroupID != nil) {
+			return Job{}, apiErr(400, "this virtual machine job uses cluster, VMware or replica settings; change it in the console")
+		}
+		if q.ImageDisk != nil || len(q.ImagePartitions) > 0 || len(q.Options.ImageDisks) > 0 || q.Options.VSS != nil {
+			return Job{}, apiErr(400, "vm jobs take no image_disk, image_partitions, image_disks or vss")
+		}
+		if !(len(q.Paths) == 1 && q.Paths[0] == "*") && len(q.Excludes) > 0 {
+			return Job{}, apiErr(400, "excludes apply only when paths is [\"*\"] (all guests)")
+		}
 	}
 	if !create {
 		if q.Kind != old.Kind || q.AgentID != old.AgentID || q.TargetID != old.TargetID {
@@ -173,6 +187,11 @@ func (s *Server) registerAPIJobs(mux *http.ServeMux) {
 				return nil, apiErr(400, "disk image jobs require a Windows agent")
 			}
 		}
+		if j.Kind == JobVM {
+			if err := s.checkAPIVMJob(r, j); err != nil {
+				return nil, err
+			}
+		}
 		id, _, err := s.createBackupJob(r, j)
 		if err != nil {
 			return nil, mutationAPIError(err, false)
@@ -193,6 +212,11 @@ func (s *Server) registerAPIJobs(mux *http.ServeMux) {
 		if err != nil {
 			return nil, err
 		}
+		if j.Kind == JobVM {
+			if err := s.checkAPIVMJob(r, j); err != nil {
+				return nil, err
+			}
+		}
 		if _, err := s.updateBackupJob(r, old, j); err != nil {
 			return nil, mutationAPIError(err, false)
 		}
@@ -208,4 +232,35 @@ func (s *Server) registerAPIJobs(mux *http.ServeMux) {
 		}
 		return apiResponse{204, nil}, nil
 	}))
+}
+
+// checkAPIVMJob: a vm job made through the API runs on the agent of a Proxmox
+// VE node or of a Hyper-V host outside a failover cluster, and names only
+// guests of that node (or "*").
+func (s *Server) checkAPIVMJob(r *http.Request, j Job) error {
+	a, err := s.store.GetAgent(r.Context(), j.AgentID)
+	if err != nil {
+		return apiErr(400, "unknown agent")
+	}
+	if a.PVE() == nil {
+		return apiErr(400, "%s is not a Proxmox VE node or Hyper-V host; install the agent on the hypervisor host", a.Hostname)
+	}
+	if a.HVCluster() != "" {
+		return apiErr(400, "%s is a node of the Hyper-V failover cluster %s; cluster jobs are set up in the console", a.Hostname, a.HVCluster())
+	}
+	if len(j.Paths) == 1 && j.Paths[0] == "*" {
+		return nil
+	}
+	local := map[string]bool{}
+	for _, g := range a.LocalGuests() {
+		if !g.Clustered {
+			local[strconv.Itoa(g.VMID)] = true
+		}
+	}
+	for _, id := range j.Paths {
+		if !local[id] {
+			return apiErr(400, "guest %s is not on %s", id, a.Hostname)
+		}
+	}
+	return nil
 }
