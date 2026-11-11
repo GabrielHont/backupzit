@@ -295,9 +295,12 @@ func (s *Store) EnrollAgent(ctx context.Context, req api.EnrollRequest) (api.Enr
 	} else if err != nil {
 		return api.EnrollResponse{}, err
 	}
-	if maxAgents != nil {
+	// A computer started from the recovery medium is temporary and must be
+	// able to join exactly when the firm is at its device limit; it neither
+	// counts nor is counted (Unirea fork).
+	if maxAgents != nil && !req.Recovery {
 		var count int64
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM agents WHERE removed_at IS NULL`).Scan(&count); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM agents WHERE removed_at IS NULL AND NOT recovery`).Scan(&count); err != nil {
 			return api.EnrollResponse{}, err
 		}
 		if count >= *maxAgents {

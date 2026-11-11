@@ -139,6 +139,43 @@ func TestAPIImageFiles(t *testing.T) {
 		len(queued.ImagePartitions) != 1 || queued.ImagePartitions[0] != 4 || queued.SnapshotID != strings.Repeat("cd", 32) {
 		t.Fatalf("queued run: %+v", queued)
 	}
+	// A whole disk: only onto a computer started from the recovery medium, onto a disk large enough.
+	token, _, _ := e.store.CreateEnrollmentToken(e.ctx, time.Hour)
+	rec, err := e.store.EnrollAgent(e.ctx, api.EnrollRequest{Token: token, Hostname: "MINWINPC", OS: "windows", Version: "test", Recovery: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ra, err := e.store.AuthenticateAgent(e.ctx, rec.AgentUUID, rec.Secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inv := `[{"number":0,"size":150323855360,"sector_size":512,"style":"raw","partitions":[]},{"number":1,"size":107374182400,"sector_size":512,"style":"raw","partitions":[]}]`
+	if err := e.store.TouchAgent(e.ctx, ra.ID, api.PollRequest{Hostname: "MINWINPC", OS: "windows", Version: "test", Disks: json.RawMessage(inv)}, ""); err != nil {
+		t.Fatal(err)
+	}
+	restoreDisk := func(body string) (int, string) {
+		return apiJSONCall(t, e, op, "POST", fmt.Sprintf("/api/v1/runs/%d/image/restore-disk", runID), body)
+	}
+	for _, b := range []string{
+		fmt.Sprintf(`{"agent_id":%d,"target_disk":0}`, ra.ID),                      // no confirmation
+		fmt.Sprintf(`{"agent_id":%d,"target_disk":0,"confirm_erase":true}`, fresh), // a running Windows
+		fmt.Sprintf(`{"agent_id":%d,"target_disk":1,"confirm_erase":true}`, ra.ID), // 100 GB < 145.6 GB
+		fmt.Sprintf(`{"agent_id":%d,"target_disk":7,"confirm_erase":true}`, ra.ID), // no such disk
+		fmt.Sprintf(`{"agent_id":%d,"confirm_erase":true}`, ra.ID),                 // no disk chosen
+		fmt.Sprintf(`{"agent_id":%d,"image":3,"target_disk":0,"confirm_erase":true}`, ra.ID),
+	} {
+		if code, body := restoreDisk(b); code != 400 {
+			t.Fatalf("restore-disk %s: %d %s", b, code, body)
+		}
+	}
+	code, body = restoreDisk(fmt.Sprintf(`{"agent_id":%d,"target_disk":0,"new_hardware":true,"confirm_erase":true}`, ra.ID))
+	if json.Unmarshal([]byte(body), &run) != nil || code != 202 || run.Kind != api.KindImageRestore || run.AgentID != ra.ID {
+		t.Fatalf("restore-disk: %d %s", code, body)
+	}
+	if r, _ := e.store.GetRun(e.ctx, run.ID); r.TargetDisk == nil || *r.TargetDisk != 0 || !r.NewHardware {
+		t.Fatalf("disk restore run: %+v", r)
+	}
+
 	// "original" keeps the old paths; agent_id 0 means the computer the image came from.
 	if code, body := restore(`{"part":3,"paths":["/"],"target":"original"}`); code != 202 || !strings.Contains(body, fmt.Sprintf(`"agent_id":%d`, old)) {
 		t.Fatalf("original restore: %d %s", code, body)

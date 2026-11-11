@@ -2406,6 +2406,103 @@
           }
         }
       }
+    },
+    "/runs/{id}/image/restore-disk": {
+      "post": {
+        "operationId": "restoreRunImageDisk",
+        "summary": "Queue a whole-disk restore onto a computer started from the recovery medium",
+        "description": "Unirea fork. Erases the target disk. Only onto a recovery agent (never a running Windows), onto a disk of its inventory at least as large as the end of the last partition of the image disk; confirm_erase must be true.",
+        "x-minimum-role": "restore",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "202": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "agent_id": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "A recovery agent of this console."
+                  },
+                  "image": {
+                    "type": "integer",
+                    "description": "Disk index in the image (0 for single-disk images)."
+                  },
+                  "target_disk": {
+                    "type": "integer",
+                    "description": "Disk number in the recovery agent's inventory."
+                  },
+                  "new_hardware": {
+                    "type": "boolean",
+                    "description": "Prepare the restored Windows for different hardware."
+                  },
+                  "confirm_erase": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "agent_id",
+                  "target_disk",
+                  "confirm_erase"
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

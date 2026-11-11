@@ -123,6 +123,16 @@ func TestAPIEnrollmentLimits(t *testing.T) {
 	if err := e.pool.QueryRow(e.ctx, `SELECT sum(uses) FROM enrollment_tokens`).Scan(&totalUses); err != nil || totalUses != 2 {
 		t.Fatalf("failed enrollment consumed token: %d %v", totalUses, err)
 	}
+	// At the limit, a computer started from the recovery medium still joins and
+	// is not counted; an ordinary one is still refused (Unirea fork).
+	_, recoveryToken := create(`{"maxUses":1}`)
+	if _, err := e.store.EnrollAgent(e.ctx, api.EnrollRequest{Token: recoveryToken, Hostname: "MINWINPC", Recovery: true}); err != nil {
+		t.Fatalf("recovery agent refused at the limit: %v", err)
+	}
+	_, plainToken := create(`{"maxUses":1}`)
+	if _, err := e.store.EnrollAgent(e.ctx, api.EnrollRequest{Token: plainToken, Hostname: "one-too-many"}); err == nil {
+		t.Fatal("an ordinary agent joined above the limit next to a recovery agent")
+	}
 	if code, _ := apiJSONCall(t, e, admin, "PUT", "/api/v1/limits", `{"maxAgents":null}`); code != 200 {
 		t.Fatal("remove limit")
 	}

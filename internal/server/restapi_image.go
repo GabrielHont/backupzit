@@ -200,4 +200,68 @@ func (s *Server) registerAPIImage(mux *http.ServeMux) {
 		}
 		return apiResponse{202, toAPIRunJSON(queued)}, nil
 	}))
+	// A whole disk of the image back onto a computer started from the
+	// recovery medium. Only onto a recovery agent (never a running Windows),
+	// only onto a disk of its inventory that is large enough, and only with
+	// the explicit confirmation that the disk is erased.
+	mux.HandleFunc("POST /api/v1/runs/{id}/image/restore-disk", s.api(PermRestore, func(w http.ResponseWriter, r *http.Request) (any, error) {
+		run, err := s.imageRun(r)
+		if err != nil {
+			return nil, err
+		}
+		var req struct {
+			AgentID      int64 `json:"agent_id"`
+			Image        int   `json:"image"`
+			TargetDisk   *int  `json:"target_disk"`
+			NewHardware  bool  `json:"new_hardware"`
+			ConfirmErase bool  `json:"confirm_erase"`
+		}
+		if err := readAPIJSON(r, &req); err != nil {
+			return nil, err
+		}
+		if !req.ConfirmErase {
+			return nil, apiErr(400, "confirm_erase must be true: the target disk is erased")
+		}
+		if req.TargetDisk == nil {
+			return nil, apiErr(400, "target_disk is required")
+		}
+		a, err := s.store.GetAgent(r.Context(), req.AgentID)
+		if err != nil {
+			return nil, apiErr(400, "unknown agent")
+		}
+		if !a.Recovery || a.RemovedAt != nil {
+			return nil, apiErr(400, "a whole disk is restored only onto a computer started from the recovery medium")
+		}
+		disks := imageDetails(run)
+		if req.Image < 0 || req.Image >= len(disks) {
+			return nil, apiErr(400, "image must name a disk of the backup")
+		}
+		var need uint64
+		for _, p := range disks[req.Image].Partitions {
+			need = max(need, p.Offset+p.Length)
+		}
+		var target *uint64
+		for _, d := range a.Disks() {
+			if d.Number == *req.TargetDisk {
+				size := d.Size
+				target = &size
+			}
+		}
+		if target == nil {
+			return nil, apiErr(400, "disk %d is not on %s", *req.TargetDisk, a.Hostname)
+		}
+		if *target < need {
+			return nil, apiErr(400, "disk %d holds %d bytes; the image needs at least %d", *req.TargetDisk, *target, need)
+		}
+		rid, err := s.store.QueueImageRestore(r.Context(), run.ID, a.ID, ImageRestoreOptions{Image: req.Image, TargetDisk: *req.TargetDisk, NewHardware: req.NewHardware})
+		if err != nil {
+			return nil, mutationAPIError(err, true)
+		}
+		s.audit(r, "restore.image", "run #%d from backup #%d to disk %d of %s", rid, run.ID, *req.TargetDisk, a.Hostname)
+		queued, err := s.store.GetRun(r.Context(), rid)
+		if err != nil {
+			return nil, err
+		}
+		return apiResponse{202, toAPIRunJSON(queued)}, nil
+	}))
 }
