@@ -2201,6 +2201,211 @@
           }
         ]
       }
+    },
+    "/runs/{id}/image": {
+      "get": {
+        "operationId": "getRunImage",
+        "summary": "List the disks and partitions of an image run",
+        "description": "Unirea fork. The layout recorded by a Windows disk image backup, with the partitions whose files can be browsed.",
+        "x-minimum-role": "viewer",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ImageDisk"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/runs/{id}/image/files": {
+      "get": {
+        "operationId": "listRunImageFiles",
+        "summary": "List a folder inside an image partition",
+        "description": "Unirea fork. Same NTFS browser as the console image page.",
+        "x-minimum-role": "restore",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ImageEntry"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "part",
+            "in": "query",
+            "required": true,
+            "description": "A browsable partition ref from GET /runs/{id}/image.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "description": "Folder with forward slashes; / is the partition root. No parent traversal or NUL.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/runs/{id}/image/restore": {
+      "post": {
+        "operationId": "restoreRunImageFiles",
+        "summary": "Queue a restore of files from an image onto a Windows agent",
+        "description": "Unirea fork. Returns the created run (kind image-file-restore). The receiving agent must be a Windows agent of this console that is neither removed nor a recovery agent.",
+        "x-minimum-role": "restore",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "202": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageRestoreCreate"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3760,31 +3965,85 @@
       "AgentDisk": {
         "type": "object",
         "properties": {
-          "number": { "type": "integer" },
-          "model": { "type": "string" },
-          "size": { "type": "integer", "format": "int64" },
-          "style": { "type": "string" },
-          "system": { "type": "boolean", "description": "The disk holds the running Windows." },
-          "bus": { "type": "string", "description": "usb, sd, virtual-file, removable, or empty for internal disks." },
-          "in_all_disks": { "type": "boolean", "description": "An image job of all disks (image_disk -1) copies it." },
+          "number": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "style": {
+            "type": "string"
+          },
+          "system": {
+            "type": "boolean",
+            "description": "The disk holds the running Windows."
+          },
+          "bus": {
+            "type": "string",
+            "description": "usb, sd, virtual-file, removable, or empty for internal disks."
+          },
+          "in_all_disks": {
+            "type": "boolean",
+            "description": "An image job of all disks (image_disk -1) copies it."
+          },
           "partitions": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "number": { "type": "integer" },
-                "size": { "type": "integer", "format": "int64" },
-                "role": { "type": "string", "enum": ["efi", "msr", "recovery", "data", "other"] },
-                "mount_points": { "type": "array", "items": { "type": "string" } },
-                "file_system": { "type": "string" },
-                "label": { "type": "string" },
-                "bootable": { "type": "boolean", "description": "Active partition of an MBR disk." }
+                "number": {
+                  "type": "integer"
+                },
+                "size": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "efi",
+                    "msr",
+                    "recovery",
+                    "data",
+                    "other"
+                  ]
+                },
+                "mount_points": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "file_system": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "bootable": {
+                  "type": "boolean",
+                  "description": "Active partition of an MBR disk."
+                }
               },
-              "required": ["number", "size", "role"]
+              "required": [
+                "number",
+                "size",
+                "role"
+              ]
             }
           }
         },
-        "required": ["number", "size", "style", "in_all_disks", "partitions"]
+        "required": [
+          "number",
+          "size",
+          "style",
+          "in_all_disks",
+          "partitions"
+        ]
       },
       "Hypervisor": {
         "type": "object",
@@ -3820,6 +4079,166 @@
           "guests"
         ],
         "additionalProperties": false
+      },
+      "ImageDisk": {
+        "type": "object",
+        "description": "A disk inside an image run, with its partitions.",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "description": "Position of the disk in the image (0 for single-disk images)."
+          },
+          "number": {
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "style": {
+            "type": "string"
+          },
+          "partitions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "integer",
+                  "description": "Partition reference for /image/files and /image/restore (disk index * 1000 + partition number)."
+                },
+                "number": {
+                  "type": "integer"
+                },
+                "size": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "mount_points": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "label": {
+                  "type": "string"
+                },
+                "file_system": {
+                  "type": "string"
+                },
+                "included": {
+                  "type": "boolean",
+                  "description": "Its contents were backed up."
+                },
+                "browsable": {
+                  "type": "boolean",
+                  "description": "Included NTFS partition: its files can be listed and restored."
+                }
+              },
+              "required": [
+                "ref",
+                "number",
+                "size",
+                "included",
+                "browsable"
+              ]
+            }
+          }
+        },
+        "required": [
+          "index",
+          "number",
+          "size",
+          "style",
+          "partitions"
+        ]
+      },
+      "ImageEntry": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "Path with forward slashes, from the partition root."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "file",
+              "dir"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "modTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "type",
+          "size",
+          "modTime"
+        ]
+      },
+      "ImageRestoreCreate": {
+        "type": "object",
+        "properties": {
+          "part": {
+            "type": "integer",
+            "description": "A browsable partition ref from GET /runs/{id}/image."
+          },
+          "paths": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10000,
+            "items": {
+              "type": "string"
+            },
+            "description": "Paths inside the partition; / for the whole partition. No parent traversal."
+          },
+          "agent_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Windows agent of this console that receives the files; 0 or absent means the agent of the image."
+          },
+          "target": {
+            "description": "\"original\", or an object with a directory on the receiving agent.",
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "original"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "directory": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "directory"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "part",
+          "paths",
+          "target"
+        ]
       }
     },
     "responses": {
