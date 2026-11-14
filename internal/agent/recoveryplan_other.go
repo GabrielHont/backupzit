@@ -17,8 +17,6 @@ func prepareRecoveryStart(context.Context, api.RecoveryPlan, func(string)) ([]st
 
 func cleanupRecoveryStart(func(string)) {}
 
-func restartForRecovery(func(string)) {}
-
 func rebootNow(func(string)) {}
 
 // CleanupRecoveryStart removes a leftover preparation (nothing on other systems).

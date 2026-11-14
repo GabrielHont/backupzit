@@ -72,20 +72,35 @@ func (a *Agent) imageBackup(ctx context.Context, run api.Run) api.RunResult {
 	return a.withRetention(ctx, r, run, res)
 }
 
-func (a *Agent) imageRestore(ctx context.Context, run api.Run) api.RunResult {
+// imageRestore writes a disk image onto a disk. For a restore plan (Unirea
+// fork) the result also says, in Details, whether the disk was written
+// ("disk_written") and whether the restored Windows can start ("boot_ready");
+// only then does the agent restart into it.
+func (a *Agent) imageRestore(ctx context.Context, run api.Run) (api.RunResult, bool) {
+	outcome := func(res api.RunResult, written, bootReady bool, more map[string]any) api.RunResult {
+		d := map[string]any{"disk_written": written, "boot_ready": bootReady}
+		for k, v := range more {
+			d[k] = v
+		}
+		res.Details, _ = json.Marshal(d)
+		return res
+	}
+	notWritten := func(err error) (api.RunResult, bool) {
+		return outcome(failed(err), false, false, nil), false
+	}
 	r, closeRepo, err := a.openRepo(ctx, run.Repository, false)
 	if err != nil {
-		return failed(fmt.Errorf("open repository: %w", err))
+		return notWritten(fmt.Errorf("open repository: %w", err))
 	}
 	defer closeRepo()
 	lock, err := r.Lock(ctx, false, lockWait)
 	if err != nil {
-		return failed(err)
+		return notWritten(err)
 	}
 	defer lock.Unlock()
 	sn, err := r.LoadSnapshot(ctx, run.SnapshotID)
 	if err != nil {
-		return failed(err)
+		return notWritten(err)
 	}
 	opts := imaging.RestoreOptions{Image: run.ImageIndex, TargetDisk: run.TargetDisk, KeepOffline: run.KeepOffline,
 		Progress: func(done, total uint64) { a.progress(ctx, done, total, 0) }}
@@ -94,7 +109,7 @@ func (a *Agent) imageRestore(ctx context.Context, run api.Run) api.RunResult {
 	}
 	st, err := imaging.Restore(ctx, r, sn, opts)
 	if err != nil {
-		return failed(err)
+		return outcome(failed(err), st != nil && st.Written, false, nil), false
 	}
 	stats, _ := json.Marshal(st)
 	msg := fmt.Sprintf("Wrote %d partitions to disk %d", st.Partitions, run.TargetDisk)
@@ -105,6 +120,8 @@ func (a *Agent) imageRestore(ctx context.Context, run api.Run) api.RunResult {
 		msg += " (left offline)"
 	}
 	res := api.RunResult{Status: api.StatusSuccess, Stats: stats, Message: msg}
+	bootReady := !run.RepairBoot
+	var hwDetail any
 	// Unirea fork: a restore plan always repairs the Windows start, also on
 	// the same hardware (the old boot entry may point at partitions that
 	// the restore has just replaced).
@@ -118,11 +135,11 @@ func (a *Agent) imageRestore(ctx context.Context, run api.Run) api.RunResult {
 		hw, err := imaging.PrepareForNewHardware(ctx, run.TargetDisk, dirs, func(s string) { a.log.Info("new hardware", "run", run.ID, "step", s) })
 		if err != nil {
 			res.Status = api.StatusWarning
-			res.Errors = append(res.Errors, "preparing for new hardware failed: "+err.Error())
-			return res
+			res.Errors = append(res.Errors, "preparing the Windows start failed: "+err.Error())
+			return outcome(res, true, false, nil), false
 		}
-		res.Details, _ = json.Marshal(map[string]any{"new_hardware": hw})
-		res.Message += fmt.Sprintf(". Prepared for new hardware: %d disk controller drivers enabled, %d drivers added", len(hw.DriversEnabled), hw.DriversAdded)
+		hwDetail = hw
+		res.Message += fmt.Sprintf(". Prepared to start: %d disk controller drivers enabled, %d drivers added", len(hw.DriversEnabled), hw.DriversAdded)
 		if hw.BootRebuilt {
 			res.Message += ", boot files rebuilt"
 		}
@@ -130,8 +147,11 @@ func (a *Agent) imageRestore(ctx context.Context, run api.Run) api.RunResult {
 			res.Status = api.StatusWarning
 			res.Errors = append(res.Errors, hw.Warnings...)
 		}
+		// The start must have been rebuilt: other warnings (a driver that did
+		// not install) do not stop the restored Windows from starting.
+		bootReady = hw.BootRebuilt
 	}
-	return res
+	return outcome(res, true, bootReady, map[string]any{"new_hardware": hwDetail}), bootReady
 }
 
 func (a *Agent) imageFileRestore(ctx context.Context, run api.Run) api.RunResult {

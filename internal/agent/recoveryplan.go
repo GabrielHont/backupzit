@@ -35,9 +35,10 @@ func (a *Agent) recoveryPrepare(ctx context.Context, run api.Run) (api.RunResult
 		cleanupRecoveryStart(func(s string) { a.log.Info("recovery cleanup", "step", s) })
 		return failed(err), nil
 	}
-	res := api.RunResult{Status: api.StatusSuccess, Message: "The computer restarts in 60 seconds into the recovery environment to restore the copy"}
+	// The restart is already scheduled by the preparation.
+	res := api.RunResult{Status: api.StatusSuccess, Message: "The computer restarts in 90 seconds into the recovery environment to restore the copy"}
 	res.Errors = steps
-	return res, func() { restartForRecovery(func(s string) { a.log.Info("recovery restart", "step", s) }) }
+	return res, nil
 }
 
 // rebootIntoWindows leaves the recovery environment (or restarts the

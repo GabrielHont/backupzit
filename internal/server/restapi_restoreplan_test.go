@@ -58,8 +58,8 @@ func TestAPIRestorePlans(t *testing.T) {
 		t.Fatalf("claim: %v", err)
 	}
 	details := `[{"number":0,"model":"Msft Virtual Disk","size":146028888064,"sector_size":512,"style":"gpt","head":"` + strings.Repeat("ab", 32) + `",
-	  "partitions":[{"number":1,"offset":1048576,"length":104857600,"file_system":"FAT32","included":true},
-	                {"number":3,"offset":122683392,"length":100000000000,"mount_points":["C:\\"],"file_system":"NTFS","included":true}]}]`
+	  "partitions":[{"number":1,"offset":1048576,"length":104857600,"file_system":"FAT32","gpt_type":"C12A7328-F81F-11D2-BA4B-00A0C93EC93B","included":true},
+	                {"number":3,"offset":122683392,"length":100000000000,"mount_points":["C:\\"],"file_system":"NTFS","gpt_type":"EBD0A0A2-B9E5-4433-87C0-68B6B72699C7","included":true}]}]`
 	if err := e.store.FinishRun(e.ctx, old, runID, api.RunResult{Status: api.StatusSuccess, SnapshotID: strings.Repeat("cd", 32), Details: json.RawMessage(details)}); err != nil {
 		t.Fatal(err)
 	}
@@ -78,6 +78,16 @@ func TestAPIRestorePlans(t *testing.T) {
 		_ = json.Unmarshal([]byte(body), &p)
 		return p
 	}
+	offline := func(id int64) {
+		if _, err := e.pool.Exec(e.ctx, `UPDATE agents SET last_seen_at=now()-interval '1 hour' WHERE id=$1`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Refused: the old computer still running (two copies of it would clash).
+	if code, body := create(fresh, true); code != 400 || !strings.Contains(body, "still connected") {
+		t.Fatalf("old computer online: %d %s", code, body)
+	}
+	offline(old)
 	// Refused: no confirmation; a computer whose program cannot prepare.
 	if code, body := create(fresh, false); code != 400 {
 		t.Fatalf("no confirmation: %d %s", code, body)
@@ -100,6 +110,11 @@ func TestAPIRestorePlans(t *testing.T) {
 	prep, err := e.store.ClaimRun(e.ctx, fresh)
 	if err != nil || prep == nil || prep.Kind != api.KindRecoveryPrepare || prep.RestorePlanID == nil || *prep.RestorePlanID != p.ID {
 		t.Fatalf("prepare run: %+v %v", prep, err)
+	}
+	// What the agent gets: the plan with its code, for the recovery environment.
+	if ar, err := e.srv.APIRun(e.ctx, prep.ID); err != nil || ar.RecoveryPlan == nil || ar.RecoveryPlan.Token == "" ||
+		ar.RecoveryPlan.Disk.GPTDiskID != "AAAA-NEW" || !strings.HasPrefix(ar.RecoveryPlan.Fingerprint, "SHA256:") {
+		t.Fatalf("prepare run for the agent: %+v %v", ar, err)
 	}
 	if err := e.store.FinishRun(e.ctx, fresh, prep.ID, api.RunResult{Status: api.StatusSuccess}); err != nil {
 		t.Fatal(err)
@@ -139,7 +154,12 @@ func TestAPIRestorePlans(t *testing.T) {
 	if cl, _ := e.store.ClaimRun(e.ctx, rec); cl == nil || cl.ID != rid {
 		t.Fatalf("recovery agent claims: %+v", cl)
 	}
-	if err := e.store.FinishRun(e.ctx, rec, rid, api.RunResult{Status: api.StatusSuccess, Message: "Wrote 2 partitions"}); err != nil {
+	if ar, err := e.srv.APIRun(e.ctx, rid); err != nil || ar.ExpectDisk == nil || ar.ExpectDisk.GPTDiskID != "AAAA-NEW" ||
+		!ar.RepairBoot || !ar.RebootAfter || ar.TargetDisk != 1 {
+		t.Fatalf("restore run for the agent: %+v %v", ar, err)
+	}
+	if err := e.store.FinishRun(e.ctx, rec, rid, api.RunResult{Status: api.StatusSuccess, Message: "Wrote 2 partitions",
+		Details: json.RawMessage(`{"disk_written":true,"boot_ready":true}`)}); err != nil {
 		t.Fatal(err)
 	}
 	if got := get(p.ID); got.State != "rebooting" || !got.Writing {
@@ -152,6 +172,7 @@ func TestAPIRestorePlans(t *testing.T) {
 	if got := get(p.ID); got.State != "done" {
 		t.Fatalf("after the restored computer checked in: %+v", got)
 	}
+	offline(old)
 
 	// Disk not found in the recovery environment: nothing written, back to Windows.
 	failRecovery := func(name, disks string) (plan, int64) {
@@ -176,6 +197,8 @@ func TestAPIRestorePlans(t *testing.T) {
 	}
 	if back, _ := e.store.ClaimRun(e.ctx, ra); back == nil || back.Kind != api.KindRecoveryReboot {
 		t.Fatalf("no disk: no way back to Windows: %+v", back)
+	} else if ar, err := e.srv.APIRun(e.ctx, back.ID); err != nil || ar.Kind != api.KindRecoveryReboot {
+		t.Fatalf("reboot run for the agent: %+v %v", ar, err)
 	}
 	// Two identical disks: not certain, refused the same way.
 	two := `[{"number":0,"model":"Msft Virtual Disk","size":161061273600,"sector_size":512,"style":"gpt","gpt_disk_id":"AAAA-NEW","partitions":[]},{"number":1,"model":"Msft Virtual Disk","size":161061273600,"sector_size":512,"style":"gpt","gpt_disk_id":"AAAA-NEW","partitions":[]}]`
@@ -188,12 +211,23 @@ func TestAPIRestorePlans(t *testing.T) {
 		t.Fatalf("restoring: %+v", q)
 	}
 	rr, _ := e.store.ClaimRun(e.ctx, ra)
-	_ = e.store.FinishRun(e.ctx, ra, rr.ID, api.RunResult{Status: api.StatusFailed, Message: "the copy cannot be restored, nothing was written: partition 3 block 9 is missing from the copy"})
+	_ = e.store.FinishRun(e.ctx, ra, rr.ID, api.RunResult{Status: api.StatusFailed, Message: "the copy cannot be restored, nothing was written: partition 3 block 9 is missing from the copy",
+		Details: json.RawMessage(`{"disk_written":false,"boot_ready":false}`)})
 	if got := get(q.ID); got.State != "failed" || got.Writing {
 		t.Fatalf("missing block: %+v", got)
 	}
 	if back, _ := e.store.ClaimRun(e.ctx, ra); back == nil || back.Kind != api.KindRecoveryReboot {
 		t.Fatalf("missing block: no way back: %+v", back)
+	}
+
+	// A restore that fails after writing: the disk is no longer the old
+	// Windows, so there is no automatic way back; the plan says so.
+	q, ra = failRecovery("written", `[{"number":2,"model":"Msft Virtual Disk","size":161061273600,"sector_size":512,"style":"gpt","gpt_disk_id":"AAAA-NEW","partitions":[]}]`)
+	rr, _ = e.store.ClaimRun(e.ctx, ra)
+	_ = e.store.FinishRun(e.ctx, ra, rr.ID, api.RunResult{Status: api.StatusFailed, Message: "read failed",
+		Details: json.RawMessage(`{"disk_written":true,"boot_ready":false}`)})
+	if got := get(q.ID); got.State != "failed" || !got.Writing {
+		t.Fatalf("written: %+v", got)
 	}
 
 	// Cancel while waiting: the code stops working.

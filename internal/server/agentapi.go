@@ -149,6 +149,20 @@ func (s *Server) toAPIRun(ctx context.Context, run *Run) (*api.Run, error) {
 		ar := &api.Run{ID: run.ID, Kind: run.Kind}
 		return ar, s.addReplica(ctx, run, ar)
 	}
+	// Unirea fork: restore plan steps that need no storage.
+	if run.Kind == api.KindRecoveryReboot {
+		return &api.Run{ID: run.ID, Kind: run.Kind}, nil
+	}
+	if run.Kind == api.KindRecoveryPrepare {
+		if run.RestorePlanID == nil {
+			return nil, errors.New("recovery prepare without a plan")
+		}
+		p, err := s.store.recoveryPlanFor(ctx, *run.RestorePlanID)
+		if err != nil {
+			return nil, err
+		}
+		return &api.Run{ID: run.ID, Kind: run.Kind, RecoveryPlan: p}, nil
+	}
 	if run.TargetID == nil {
 		return nil, errors.New("storage target was deleted")
 	}
@@ -284,15 +298,6 @@ func (s *Server) toAPIRun(ctx context.Context, run *Run) (*api.Run, error) {
 		}
 		ar.RepairBoot = run.RepairBoot
 		ar.RebootAfter = run.RestorePlanID != nil
-	case api.KindRecoveryPrepare:
-		if run.RestorePlanID == nil {
-			return nil, errors.New("recovery prepare without a plan")
-		}
-		p, err := s.store.recoveryPlanFor(ctx, *run.RestorePlanID)
-		if err != nil {
-			return nil, err
-		}
-		ar.RecoveryPlan = p
 	}
 	return ar, nil
 }

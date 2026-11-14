@@ -45,6 +45,7 @@ type RestoreOptions struct {
 
 // RestoreStats summarises an image restore.
 type RestoreStats struct {
+	Written      bool `json:"written"`
 	Partitions   int
 	BytesWritten uint64
 	Duration     time.Duration

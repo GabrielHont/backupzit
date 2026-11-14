@@ -97,3 +97,36 @@ func (r *Repository) LoadBlockMap(ctx context.Context, p *PartitionImage) ([]ID,
 	}
 	return ids, nil
 }
+
+// CheckStored makes sure every blob of the list can be read from storage:
+// each is in the index, and each pack holding them exists and is long enough
+// for them (Unirea fork: checked before a disk restore writes anything).
+func (r *Repository) CheckStored(ctx context.Context, t BlobType, ids []ID) error {
+	ends := map[ID]int64{}
+	for _, id := range ids {
+		if id.IsNull() {
+			continue
+		}
+		loc, ok := r.idx.Lookup(BlobHandle{Type: t, ID: id})
+		if !ok {
+			return fmt.Errorf("%s blob %s is missing from the index", t, id.Short())
+		}
+		end := int64(loc.Offset) + int64(loc.Length)
+		if end > ends[loc.Pack] {
+			ends[loc.Pack] = end
+		}
+	}
+	for pack, end := range ends {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		size, err := r.be.Size(ctx, packName(pack))
+		if err != nil {
+			return fmt.Errorf("pack %s: %w", pack.Short(), err)
+		}
+		if size < end {
+			return fmt.Errorf("pack %s is shorter than its blobs (%d < %d bytes)", pack.Short(), size, end)
+		}
+	}
+	return nil
+}

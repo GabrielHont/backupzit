@@ -60,14 +60,24 @@ func run(ctx context.Context, name string, args ...string) (string, error) {
 
 // decodeConsole reads UTF-16 output (some tools write it) or bytes as they are.
 func decodeConsole(b []byte) string {
+	if len(b) >= 2 && b[0] == 0xFF && b[1] == 0xFE {
+		b = b[2:] // UTF-16LE byte order mark
+		return decodeUTF16(b)
+	}
 	if len(b) >= 2 && b[1] == 0 {
+		return decodeUTF16(b)
+	}
+	return string(b)
+}
+
+func decodeUTF16(b []byte) string {
+	{
 		u := make([]uint16, len(b)/2)
 		for i := range u {
 			u[i] = uint16(b[2*i]) | uint16(b[2*i+1])<<8
 		}
-		return string(utf16.Decode(u))
+		return strings.TrimPrefix(string(utf16.Decode(u)), "\ufeff")
 	}
-	return string(b)
 }
 
 func lastLines(s string, n int) string {
@@ -125,6 +135,28 @@ func findWinRE() (string, error) {
 	return "", errors.New("this Windows has no recovery environment (Winre.wim); the restore needs it")
 }
 
+// createPrivateDir creates the work folder only for SYSTEM and the
+// administrators (it holds the plan's single-use code), atomically: a folder
+// or link left there by someone else is refused, not reused.
+func createPrivateDir(dir string) error {
+	if _, err := os.Lstat(dir); err == nil {
+		return fmt.Errorf("%s already exists and could not be removed; delete it and try again", dir)
+	}
+	sd, err := windows.SecurityDescriptorFromString("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+	if err != nil {
+		return err
+	}
+	p, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		return err
+	}
+	sa := &windows.SecurityAttributes{Length: uint32(unsafe.Sizeof(windows.SecurityAttributes{})), SecurityDescriptor: sd}
+	if err := windows.CreateDirectory(p, sa); err != nil {
+		return fmt.Errorf("create %s: %w", dir, err)
+	}
+	return nil
+}
+
 func copyRecoveryFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -179,13 +211,42 @@ func keepDrivers(dir string) (kept int) {
 	return kept
 }
 
-// bitlockerOn reports whether the system drive is protected by BitLocker
-// (the PowerShell values are not translated).
-func bitlockerOn(ctx context.Context) bool {
-	out, err := run(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-		"try { (Get-BitLockerVolume -MountPoint $env:SystemDrive -ErrorAction Stop).ProtectionStatus } catch { 'Off' }")
-	return err == nil && strings.Contains(out, "On")
+type protection int
+
+const (
+	protectionUnknown protection = iota
+	protectionOff
+	protectionOn
+)
+
+// bitlockerState reads the BitLocker protection of the system drive through
+// WMI (present on every edition; the values are not translated). A Windows
+// without the BitLocker namespace has no BitLocker at all; any other error
+// leaves the state unknown, and the preparation stops rather than risk a
+// start that asks for the recovery key.
+func bitlockerState(ctx context.Context) protection {
+	const script = `try {
+  $v = Get-CimInstance -Namespace root\cimv2\security\microsoftvolumeencryption -ClassName Win32_EncryptableVolume -Filter "DriveLetter='$env:SystemDrive'" -ErrorAction Stop
+  if (-not $v) { 'BZ:0' } else { $r = Invoke-CimMethod -InputObject $v -MethodName GetProtectionStatus -ErrorAction Stop; 'BZ:' + $r.ProtectionStatus }
+} catch {
+  if ("$($_.Exception.NativeErrorCode)" -eq 'InvalidNamespace' -or "$($_.Exception.NativeErrorCode)" -eq 'InvalidClass') { 'BZ:0' } else { 'BZ:?' }
+}`
+	out, err := run(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	if err != nil {
+		return protectionUnknown
+	}
+	switch {
+	case strings.Contains(out, "BZ:0"):
+		return protectionOff
+	case strings.Contains(out, "BZ:1"):
+		return protectionOn
+	}
+	return protectionUnknown // BZ:2 (locked) or no answer
 }
+
+// entryName names the start entries the agent creates; cleanup deletes an
+// entry only when it carries this name.
+const entryName = "Unirea Cloud - refacere"
 
 const startScript = `@echo off
 wpeinit
@@ -215,7 +276,10 @@ func prepareRecoveryStart(ctx context.Context, plan api.RecoveryPlan, log func(s
 	if need := uint64(st.Size())*2 + 1<<30; freeBytes(systemDrive()+`\`) < need {
 		return nil, fmt.Errorf("the system drive needs at least %d MB free for the restore", need>>20)
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "mount"), 0o700); err != nil {
+	if err := createPrivateDir(dir); err != nil {
+		return nil, err
+	}
+	if err := os.Mkdir(filepath.Join(dir, "mount"), 0o700); err != nil {
 		return nil, err
 	}
 	wim := filepath.Join(dir, "boot.wim")
@@ -223,12 +287,16 @@ func prepareRecoveryStart(ctx context.Context, plan api.RecoveryPlan, log func(s
 	if err := copyRecoveryFile(src, wim); err != nil {
 		return nil, fmt.Errorf("copy the recovery environment: %w", err)
 	}
-	sdi := filepath.Join(os.Getenv("SystemRoot"), `Boot\DVD\EFI\boot.sdi`)
-	if !firmwareUEFI() {
-		sdi = filepath.Join(os.Getenv("SystemRoot"), `Boot\DVD\PCAT\boot.sdi`)
+	// The same file serves UEFI and BIOS starts; PCAT is the copy every
+	// Windows has.
+	sdiErr := errors.New("boot.sdi not found")
+	for _, sub := range []string{`Boot\DVD\PCAT\boot.sdi`, `Boot\DVD\EFI\boot.sdi`} {
+		if sdiErr = copyRecoveryFile(filepath.Join(os.Getenv("SystemRoot"), sub), filepath.Join(dir, "boot.sdi")); sdiErr == nil {
+			break
+		}
 	}
-	if err := copyRecoveryFile(sdi, filepath.Join(dir, "boot.sdi")); err != nil {
-		return nil, fmt.Errorf("copy boot.sdi: %w", err)
+	if sdiErr != nil {
+		return nil, fmt.Errorf("copy boot.sdi: %w", sdiErr)
 	}
 
 	// Network and storage drivers of this computer, for the recovery
@@ -301,7 +369,7 @@ func prepareRecoveryStart(ctx context.Context, plan api.RecoveryPlan, log func(s
 
 	// A one-time start entry for the copy; the computer's boot menu and its
 	// own recovery environment stay as they are.
-	out, err := run(ctx, "bcdedit.exe", "/create", "/device")
+	out, err := run(ctx, "bcdedit.exe", "/create", "/d", entryName, "/device")
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +389,7 @@ func prepareRecoveryStart(ctx context.Context, plan api.RecoveryPlan, log func(s
 			return nil, err
 		}
 	}
-	out, err = run(ctx, "bcdedit.exe", "/create", "/d", "Unirea Cloud - refacere", "/application", "osloader")
+	out, err = run(ctx, "bcdedit.exe", "/create", "/d", entryName, "/application", "osloader")
 	if err != nil {
 		return nil, err
 	}
@@ -349,17 +417,35 @@ func prepareRecoveryStart(ctx context.Context, plan api.RecoveryPlan, log func(s
 	}
 	// BitLocker: the start manager must be able to read the copy on the
 	// system drive at the next start (protection resumes after it).
-	if bitlockerOn(ctx) {
-		if _, err := run(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-			"Suspend-BitLocker -MountPoint $env:SystemDrive -RebootCount 1 | Out-Null"); err != nil || bitlockerOn(ctx) {
+	suspended := false
+	resume := func() {
+		if suspended {
+			_, _ = run(context.WithoutCancel(ctx), "manage-bde.exe", "-protectors", "-enable", systemDrive())
+		}
+	}
+	switch bitlockerState(ctx) {
+	case protectionOff:
+	case protectionOn:
+		if _, err := run(ctx, "manage-bde.exe", "-protectors", "-disable", systemDrive(), "-RebootCount", "1"); err != nil || bitlockerState(ctx) != protectionOff {
 			return nil, errors.New("BitLocker protection could not be paused for the restart")
 		}
 		notes = append(notes, "BitLocker protection paused for one restart")
+		suspended = true
+	default:
+		return nil, errors.New("the BitLocker state of the system drive could not be read; the restore did not start")
 	}
 	if _, err := run(ctx, "bcdedit.exe", "/bootsequence", state.Loader); err != nil {
+		resume()
 		return nil, err
 	}
 	log("one-time start into the recovery environment set")
+	// The restart is scheduled here, so a failure still undoes everything;
+	// 90 seconds leave time to report the result first.
+	if _, err := run(ctx, "shutdown.exe", "/r", "/t", "90", "/c",
+		"Unirea Cloud reface calculatorul din copie. Calculatorul reporneste in 90 de secunde; salveaza ce ai deschis."); err != nil {
+		resume()
+		return nil, fmt.Errorf("schedule the restart: %w", err)
+	}
 	return notes, nil
 }
 
@@ -371,10 +457,11 @@ func cleanupRecoveryStart(log func(string)) {
 		var st recoveryState
 		if json.Unmarshal(b, &st) == nil {
 			for _, id := range []string{st.Loader, st.Options} {
-				if id != "" {
-					if _, err := run(context.Background(), "bcdedit.exe", "/delete", id, "/f"); err != nil {
-						log("removing start entry: " + err.Error())
-					}
+				if !ownEntry(id) {
+					continue
+				}
+				if _, err := run(context.Background(), "bcdedit.exe", "/delete", id, "/f"); err != nil {
+					log("removing start entry: " + err.Error())
 				}
 			}
 		}
@@ -385,6 +472,16 @@ func cleanupRecoveryStart(log func(string)) {
 	_ = os.RemoveAll(dir)
 }
 
+// ownEntry reports whether id is a start entry this agent created: a plain
+// identifier (never a well-known name) whose description is entryName.
+func ownEntry(id string) bool {
+	if id == "" || guidRe.FindString(id) != id {
+		return false
+	}
+	out, err := run(context.Background(), "bcdedit.exe", "/enum", id)
+	return err == nil && strings.Contains(out, entryName)
+}
+
 // CleanupRecoveryStart is called when the agent starts in Windows: a leftover
 // preparation means the recovery environment came back without a restore.
 func CleanupRecoveryStart(log func(string)) {
@@ -393,13 +490,6 @@ func CleanupRecoveryStart(log func(string)) {
 	}
 	if _, err := os.Stat(workDir()); err == nil {
 		cleanupRecoveryStart(log)
-	}
-}
-
-func restartForRecovery(log func(string)) {
-	if _, err := run(context.Background(), "shutdown.exe", "/r", "/t", "60", "/c",
-		"Unirea Cloud reface calculatorul din copie. Calculatorul reporneste in 60 de secunde; salveaza ce ai deschis."); err != nil {
-		log(err.Error())
 	}
 }
 

@@ -439,14 +439,16 @@ func (a *Agent) execute(ctx context.Context, run api.Run) {
 		a.inventoryAt = time.Time{}
 		a.mu.Unlock()
 	case api.KindImageRestore:
-		res = a.imageRestore(ctx, run)
+		var bootReady bool
+		res, bootReady = a.imageRestore(ctx, run)
 		a.mu.Lock()
 		a.inventoryAt = time.Time{} // disk layout changed
 		a.mu.Unlock()
 		// Unirea fork: a restore plan starts the restored Windows once the
-		// result is reported (a failure before writing waits for the
-		// console's recovery-reboot instead).
-		if run.RebootAfter && res.Status != api.StatusFailed {
+		// result is reported and only when its start was repaired; a failure
+		// before writing waits for the console's recovery-reboot, a failure
+		// after it waits for the team.
+		if run.RebootAfter && res.Status != api.StatusFailed && bootReady {
 			after = func() { a.rebootIntoWindows() }
 		}
 	case api.KindRecoveryPrepare:

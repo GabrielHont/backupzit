@@ -37,6 +37,9 @@ type RestoreOptions struct {
 
 // RestoreStats summarises an image restore.
 type RestoreStats struct {
+	// Written: the disk was changed (Unirea fork); false means a failure
+	// left it as it was.
+	Written      bool `json:"written"`
 	Partitions   int
 	BytesWritten uint64
 	Duration     time.Duration
@@ -119,14 +122,16 @@ func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts Re
 		_, _ = ioctl(dh, ioctlDiskUpdateProperties, nil, 0)
 	}()
 
+	// From here on the disk is changed (Unirea fork: reported to the console).
+	st := &RestoreStats{Written: true}
 	if err := writeLayout(dh, img, target.Size); err != nil {
-		return nil, fmt.Errorf("write partition table: %w", err)
+		return st, fmt.Errorf("write partition table: %w", err)
 	}
 	f := os.NewFile(uintptr(dh), physicalDrivePath(target.Number))
 
 	if img.Style == StyleMBR {
 		if err := restoreMBRBootCode(ctx, r, f, img); err != nil {
-			return nil, err
+			return st, err
 		}
 	}
 
@@ -136,7 +141,6 @@ func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts Re
 			total += p.StoredBytes
 		}
 	}
-	st := &RestoreStats{}
 	for i := range img.Partitions {
 		p := &img.Partitions[i]
 		if !p.Included {
@@ -172,12 +176,13 @@ func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts Re
 	return st, nil
 }
 
-// preflight loads the block maps of the included partitions and checks that
-// every block they name is in the repository index, and that one block can
-// actually be read from storage (network, keys).
+// preflight loads the block maps of the included partitions, checks that
+// every block they name is stored (index entry, pack present and long
+// enough), reads the MBR head when the disk needs it and one data block, so
+// that missing storage, keys or network show before anything is written.
 func preflight(ctx context.Context, r *repo.Repository, img *repo.DiskImage) (map[int][]repo.ID, error) {
 	maps := map[int][]repo.ID{}
-	read := false
+	var all []repo.ID
 	for i := range img.Partitions {
 		p := &img.Partitions[i]
 		if !p.Included {
@@ -187,21 +192,24 @@ func preflight(ctx context.Context, r *repo.Repository, img *repo.DiskImage) (ma
 		if err != nil {
 			return nil, fmt.Errorf("partition %d: %w", p.Number, err)
 		}
-		for b, id := range ids {
-			if id.IsNull() {
-				continue
-			}
-			if _, ok := r.Index().Lookup(repo.BlobHandle{Type: repo.DataBlob, ID: id}); !ok {
-				return nil, fmt.Errorf("partition %d block %d is missing from the copy", p.Number, b)
-			}
-			if !read {
-				if _, err := r.LoadBlob(ctx, repo.DataBlob, id); err != nil {
-					return nil, fmt.Errorf("reading the copy: %w", err)
-				}
-				read = true
-			}
-		}
 		maps[i] = ids
+		all = append(all, ids...)
+	}
+	if err := r.CheckStored(ctx, repo.DataBlob, all); err != nil {
+		return nil, err
+	}
+	if img.Style == StyleMBR {
+		if _, err := r.LoadBlob(ctx, repo.DataBlob, img.Head); err != nil {
+			return nil, fmt.Errorf("disk head: %w", err)
+		}
+	}
+	for _, id := range all {
+		if !id.IsNull() {
+			if _, err := r.LoadBlob(ctx, repo.DataBlob, id); err != nil {
+				return nil, fmt.Errorf("reading the copy: %w", err)
+			}
+			break
+		}
 	}
 	return maps, nil
 }

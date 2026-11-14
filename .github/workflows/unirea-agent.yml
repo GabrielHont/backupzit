@@ -36,7 +36,7 @@ jobs:
           $version = $tag.TrimStart('v')
           if ($version -notmatch '^(\d+)\.(\d+)\.(\d+)-unirea\.(\d+)$') { throw "not a fork tag: $tag" }
           $msi = "$($Matches[1]).$($Matches[2]).$([int]$Matches[3] * 100 + [int]$Matches[4])"
-          ./packaging/windows/build-msi.ps1 -Version $version -MsiVersion $msi
+          ./packaging/windows/build-msi.ps1 -Version $version -MsiVersionOverride $msi
           Get-ChildItem dist/*.msi | ForEach-Object { (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower() + "  " + $_.Name } | Set-Content dist/SHA256SUMS.txt
           Get-Content dist/SHA256SUMS.txt
       - name: Release

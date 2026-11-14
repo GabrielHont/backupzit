@@ -173,8 +173,10 @@ func recoveryWithPlan(ctx context.Context, file string) error {
 	a.VSS = false
 	a.InventoryInterval = 30 * time.Second
 	// The console answers within a few minutes (restore, or back to Windows);
-	// if nothing at all happens, leave rather than wait forever.
-	wctx, cancel := context.WithTimeout(ctx, 6*time.Hour)
+	// if no run starts at all, leave rather than wait forever. Once a run has
+	// started there is no time limit: stopping a disk write halfway would
+	// leave the computer unable to start.
+	wctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
 		time.Sleep(30 * time.Minute)
