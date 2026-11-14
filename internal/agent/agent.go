@@ -140,7 +140,7 @@ func enroll(ctx context.Context, serverURL, token, fingerprint, version string, 
 	host, osName, arch := hostInfo(version)
 	c := &Client{cfg: &Config{ServerURL: serverURL, Fingerprint: fingerprint}, http: httpClient(fingerprint)}
 	var resp api.EnrollResponse
-	req := api.EnrollRequest{Token: token, Hostname: host, OS: osName, Arch: arch, Version: version, Recovery: recovery, Capabilities: []string{api.CapabilityJobOptions}}
+	req := api.EnrollRequest{Token: token, Hostname: host, OS: osName, Arch: arch, Version: version, Recovery: recovery, Capabilities: agentCapabilities()}
 	err := c.post(ctx, api.PathEnroll, req, &resp, false)
 	if err != nil && errors.Is(err, tlsutil.ErrFingerprintMismatch) {
 		// Codes made by consoles before 0.33.6 on their web port (443,
@@ -212,6 +212,8 @@ type Agent struct {
 	InventoryInterval time.Duration
 
 	mu sync.Mutex
+	// everRan: a run has started since the agent began (Unirea fork).
+	everRan bool
 	// running counts the runs in progress (the console may hand out several
 	// at once when the agent allows it).
 	running int
@@ -245,7 +247,7 @@ func (a *Agent) PollOnce(ctx context.Context) (time.Duration, error) {
 	host, osName, arch := hostInfo(a.version)
 	var resp api.PollResponse
 	req := api.PollRequest{Hostname: host, OS: osName, Arch: arch, Version: a.version, Busy: busy, Running: running, Parallel: true, IPs: localIPs(), Instance: a.instance, Progress: a.runProgress()}
-	req.Capabilities = []string{api.CapabilityJobOptions}
+	req.Capabilities = agentCapabilities()
 	req.WantStatus = a.wantStatus()
 	invEvery := a.InventoryInterval
 	if invEvery <= 0 {
@@ -331,7 +333,19 @@ func (a *Agent) Run(ctx context.Context) {
 	}
 }
 
+// Busy reports whether a run has started since the agent began: the
+// recovery environment of a restore plan leaves when the console never
+// answers (Unirea fork).
+func (a *Agent) Busy() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.everRan
+}
+
 func (a *Agent) execute(ctx context.Context, run api.Run) {
+	a.mu.Lock()
+	a.everRan = true
+	a.mu.Unlock()
 	ctx = withRunID(ctx, run.ID)
 	a.log.Info("run started", "run", run.ID, "kind", run.Kind, "job", run.JobName)
 	a.runStarted(run)
@@ -429,6 +443,17 @@ func (a *Agent) execute(ctx context.Context, run api.Run) {
 		a.mu.Lock()
 		a.inventoryAt = time.Time{} // disk layout changed
 		a.mu.Unlock()
+		// Unirea fork: a restore plan starts the restored Windows once the
+		// result is reported (a failure before writing waits for the
+		// console's recovery-reboot instead).
+		if run.RebootAfter && res.Status != api.StatusFailed {
+			after = func() { a.rebootIntoWindows() }
+		}
+	case api.KindRecoveryPrepare:
+		res, after = a.recoveryPrepare(ctx, run)
+	case api.KindRecoveryReboot:
+		res = api.RunResult{Status: api.StatusSuccess, Message: "Leaving the recovery environment; nothing was written"}
+		after = func() { a.rebootIntoWindows() }
 	default:
 		res = api.RunResult{Status: api.StatusFailed, Message: "unsupported run kind " + run.Kind}
 	}

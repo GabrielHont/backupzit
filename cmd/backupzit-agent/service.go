@@ -126,6 +126,9 @@ func (p *program) Start(s service.Service) error {
 				}
 				ag := agent.New(cfg, logger, version)
 				ag.LogPath = agent.LogPath(p.cfgPath)
+				// Unirea fork: back in Windows after a restore plan that did
+				// not write anything; remove its start entry and copy.
+				agent.CleanupRecoveryStart(func(s string) { logger.Info("recovery cleanup", "step", s) })
 				go ag.ServeLocal(ctx)
 				if !service.Interactive() {
 					agent.StartTrayInSessions(logger)

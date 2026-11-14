@@ -274,6 +274,25 @@ func (s *Server) toAPIRun(ctx context.Context, run *Run) (*api.Run, error) {
 		if len(run.ImagePartitions) > 0 {
 			ar.ImageIndex = run.ImagePartitions[0] // which disk of the backup
 		}
+		// Unirea fork: the only disk that may be overwritten, the boot repair,
+		// and a restart into the restored Windows for a restore plan.
+		if len(run.ExpectDisk) > 0 {
+			var d api.DiskIdentity
+			if json.Unmarshal(run.ExpectDisk, &d) == nil {
+				ar.ExpectDisk = &d
+			}
+		}
+		ar.RepairBoot = run.RepairBoot
+		ar.RebootAfter = run.RestorePlanID != nil
+	case api.KindRecoveryPrepare:
+		if run.RestorePlanID == nil {
+			return nil, errors.New("recovery prepare without a plan")
+		}
+		p, err := s.store.recoveryPlanFor(ctx, *run.RestorePlanID)
+		if err != nil {
+			return nil, err
+		}
+		ar.RecoveryPlan = p
 	}
 	return ar, nil
 }

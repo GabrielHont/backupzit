@@ -87,7 +87,12 @@ func (a *Agent) imageRestore(ctx context.Context, run api.Run) api.RunResult {
 	if err != nil {
 		return failed(err)
 	}
-	st, err := imaging.Restore(ctx, r, sn, imaging.RestoreOptions{Image: run.ImageIndex, TargetDisk: run.TargetDisk, KeepOffline: run.KeepOffline})
+	opts := imaging.RestoreOptions{Image: run.ImageIndex, TargetDisk: run.TargetDisk, KeepOffline: run.KeepOffline,
+		Progress: func(done, total uint64) { a.progress(ctx, done, total, 0) }}
+	if e := run.ExpectDisk; e != nil {
+		opts.Expect = &imaging.DiskIdentity{Style: e.Style, GPTDiskID: e.GPTDiskID, MBRSignature: e.MBRSignature, Size: e.Size, Model: e.Model}
+	}
+	st, err := imaging.Restore(ctx, r, sn, opts)
 	if err != nil {
 		return failed(err)
 	}
@@ -100,7 +105,10 @@ func (a *Agent) imageRestore(ctx context.Context, run api.Run) api.RunResult {
 		msg += " (left offline)"
 	}
 	res := api.RunResult{Status: api.StatusSuccess, Stats: stats, Message: msg}
-	if run.NewHardware && !run.KeepOffline {
+	// Unirea fork: a restore plan always repairs the Windows start, also on
+	// the same hardware (the old boot entry may point at partitions that
+	// the restore has just replaced).
+	if (run.NewHardware || run.RepairBoot) && !run.KeepOffline {
 		dirs := imaging.RecoveryDriverDirs()
 		for _, d := range strings.Split(run.DriverPath, ";") {
 			if d = strings.TrimSpace(d); d != "" {

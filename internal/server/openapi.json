@@ -2503,6 +2503,198 @@
           }
         }
       }
+    },
+    "/restore-plans": {
+      "post": {
+        "operationId": "createRestorePlan",
+        "summary": "Restore a whole computer from a disk image, without boot media",
+        "description": "Unirea fork. The computer's agent prepares a one-time start into a copy of its recovery environment; from there it joins with a single-use code, the console checks the recorded disk and starts the restore by itself. Nothing is written before that check; every failure before it sends the computer back into its Windows.",
+        "x-minimum-role": "restore",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "201": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestorePlan"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "run_id": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "A successful image backup run."
+                  },
+                  "image": {
+                    "type": "integer"
+                  },
+                  "agent_id": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "A Windows agent of this console with the recovery-prepare-v1 capability, online."
+                  },
+                  "confirm_erase": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "run_id",
+                  "agent_id",
+                  "confirm_erase"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/restore-plans/{id}": {
+      "get": {
+        "operationId": "getRestorePlan",
+        "summary": "Read a restore plan",
+        "x-minimum-role": "restore",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "200": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestorePlan"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/restore-plans/{id}/cancel": {
+      "post": {
+        "operationId": "cancelRestorePlan",
+        "summary": "Cancel a restore plan before anything is written",
+        "x-minimum-role": "restore",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "202": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestorePlan"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -4335,6 +4527,101 @@
           "part",
           "paths",
           "target"
+        ]
+      },
+      "RestorePlan": {
+        "type": "object",
+        "description": "Unirea fork: a whole computer restored without boot media.",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "backup_run_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "image": {
+            "type": "integer"
+          },
+          "agent_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The computer that is restored (its current Windows)."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "preparing",
+              "waiting",
+              "connected",
+              "restoring",
+              "rebooting",
+              "done",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "writing": {
+            "type": "boolean",
+            "description": "The disk has been written; before it, a failure leaves the computer's Windows untouched."
+          },
+          "message": {
+            "type": "string"
+          },
+          "recovery_agent_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "prepare_run_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "restore_run_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "disk": {
+            "type": "object",
+            "description": "The only disk that may be overwritten, recorded in the computer's Windows.",
+            "properties": {
+              "style": {
+                "type": "string"
+              },
+              "gpt_disk_id": {
+                "type": "string"
+              },
+              "mbr_signature": {
+                "type": "integer"
+              },
+              "size": {
+                "type": "integer",
+                "format": "int64"
+              },
+              "model": {
+                "type": "string"
+              }
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "backup_run_id",
+          "image",
+          "agent_id",
+          "state",
+          "writing",
+          "disk",
+          "created_at",
+          "updated_at"
         ]
       }
     },

@@ -11,6 +11,10 @@
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Version,
+    # Unirea fork: the MSI version (three numbers) when it must differ from the
+    # start of -Version, so a fork build upgrades the official one of the same
+    # release (0.47.3-unirea.7 -> 0.47.307).
+    [string]$MsiVersion = "",
     # Build for Windows 7 / Server 2008 R2 / 2012 R2 with the go-legacy-win7
     # toolchain (Go dropped those systems after 1.20). Path from
     # BACKUPZIT_LEGACY_GO or tools-legacy next to the repository.
@@ -41,6 +45,7 @@ New-Item -ItemType Directory -Force $dist, $work | Out-Null
 
 # MSI versions must be numeric major.minor.build.
 $msiVersion = ($Version -replace '[^0-9.].*$', '')
+if ($MsiVersion) { $msiVersion = $MsiVersion }
 if ($msiVersion -notmatch '^\d+\.\d+\.\d+$') { throw "Version must start with major.minor.patch, got '$Version'" }
 
 Push-Location $root

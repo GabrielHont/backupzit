@@ -122,3 +122,28 @@ func PartRef(img, num int) int { return img*1000 + num }
 
 // SplitPartRef is the reverse of PartRef.
 func SplitPartRef(ref int) (img, num int) { return ref / 1000, ref % 1000 }
+
+// DiskIdentity tells one disk apart from the others: its partition table
+// identifier, size and model, as recorded while the computer still ran its
+// own Windows.
+type DiskIdentity struct {
+	Style        string `json:"style"`
+	GPTDiskID    string `json:"gpt_disk_id,omitempty"`
+	MBRSignature uint32 `json:"mbr_signature,omitempty"`
+	Size         uint64 `json:"size"`
+	Model        string `json:"model,omitempty"`
+}
+
+// Matches reports whether d is the disk the identity describes.
+func (id DiskIdentity) Matches(d Disk) bool {
+	if d.Size != id.Size || !strings.EqualFold(strings.TrimSpace(d.Model), strings.TrimSpace(id.Model)) || d.Style != id.Style {
+		return false
+	}
+	switch id.Style {
+	case StyleGPT:
+		return id.GPTDiskID != "" && strings.EqualFold(d.GPTDiskID, id.GPTDiskID)
+	case StyleMBR:
+		return id.MBRSignature != 0 && d.MBRSignature == id.MBRSignature
+	}
+	return false
+}

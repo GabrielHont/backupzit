@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -93,6 +94,11 @@ type ImageRestoreOptions struct {
 	// DriverPath lists extra driver folders on the target machine (;).
 	NewHardware bool
 	DriverPath  string
+	// Unirea fork: the only disk that may be overwritten (checked by the
+	// agent before any write), boot repair in every case, and the plan.
+	Expect     *api.DiskIdentity
+	RepairBoot bool
+	PlanID     *int64
 }
 
 func (s *Store) QueueImageRestore(ctx context.Context, backupRunID, agentID int64, o ImageRestoreOptions) (int64, error) {
@@ -122,9 +128,13 @@ func (s *Store) QueueImageRestore(ctx context.Context, backupRunID, agentID int6
 			return 0, fmt.Errorf("disk %d on %s holds the running Windows and cannot be overwritten", targetDisk, a.Hostname)
 		}
 	}
+	var expect []byte
+	if o.Expect != nil {
+		expect, _ = json.Marshal(o.Expect)
+	}
 	var id int64
-	err = s.db.QueryRow(ctx, `INSERT INTO runs(agent_id, job_id, kind, trigger, repo_url, target_id, snapshot_id, target_disk, keep_offline, new_hardware, driver_path, image_partitions)
-		VALUES($1,$2,'image-restore','manual',$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-		agentID, b.JobID, b.RepoURL, b.TargetID, b.SnapshotID, targetDisk, keepOffline, o.NewHardware, strings.TrimSpace(o.DriverPath), []int{o.Image}).Scan(&id)
+	err = s.db.QueryRow(ctx, `INSERT INTO runs(agent_id, job_id, kind, trigger, repo_url, target_id, snapshot_id, target_disk, keep_offline, new_hardware, driver_path, image_partitions, expect_disk, repair_boot, restore_plan_id)
+		VALUES($1,$2,'image-restore','manual',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+		agentID, b.JobID, b.RepoURL, b.TargetID, b.SnapshotID, targetDisk, keepOffline, o.NewHardware, strings.TrimSpace(o.DriverPath), []int{o.Image}, expect, o.RepairBoot, o.PlanID).Scan(&id)
 	return id, err
 }

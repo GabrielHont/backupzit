@@ -29,6 +29,10 @@ type RestoreOptions struct {
 	// otherwise assign new disk and partition IDs to resolve the duplicate
 	// and the restored system would no longer boot.
 	KeepOffline bool
+	// Expect, when set, names the disk that may be overwritten: the restore
+	// stops before any write unless the target disk matches it (Unirea fork:
+	// disk numbers can change between Windows and the recovery environment).
+	Expect *DiskIdentity
 }
 
 // RestoreStats summarises an image restore.
@@ -74,6 +78,15 @@ func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts Re
 	}
 	if target.SectorSize != img.SectorSize {
 		return nil, fmt.Errorf("target disk has %d byte sectors, image was taken from %d byte sectors", target.SectorSize, img.SectorSize)
+	}
+	if opts.Expect != nil && !opts.Expect.Matches(*target) {
+		return nil, fmt.Errorf("disk %d is not the disk chosen for this restore; nothing was written", opts.TargetDisk)
+	}
+	// Before the first write: every block map loads and every block is in the
+	// index, so a missing or unreadable copy cannot leave a half-written disk.
+	maps, err := preflight(ctx, r, img)
+	if err != nil {
+		return nil, fmt.Errorf("the copy cannot be restored, nothing was written: %w", err)
 	}
 
 	// Try to lock and dismount volumes on the target disk so pending writes
@@ -129,10 +142,7 @@ func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts Re
 		if !p.Included {
 			continue
 		}
-		ids, err := r.LoadBlockMap(ctx, p)
-		if err != nil {
-			return st, fmt.Errorf("partition %d: %w", p.Number, err)
-		}
+		ids := maps[i]
 		for b, id := range ids {
 			if err := ctx.Err(); err != nil {
 				return st, err
@@ -160,6 +170,40 @@ func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts Re
 	}
 	st.Duration = time.Since(start)
 	return st, nil
+}
+
+// preflight loads the block maps of the included partitions and checks that
+// every block they name is in the repository index, and that one block can
+// actually be read from storage (network, keys).
+func preflight(ctx context.Context, r *repo.Repository, img *repo.DiskImage) (map[int][]repo.ID, error) {
+	maps := map[int][]repo.ID{}
+	read := false
+	for i := range img.Partitions {
+		p := &img.Partitions[i]
+		if !p.Included {
+			continue
+		}
+		ids, err := r.LoadBlockMap(ctx, p)
+		if err != nil {
+			return nil, fmt.Errorf("partition %d: %w", p.Number, err)
+		}
+		for b, id := range ids {
+			if id.IsNull() {
+				continue
+			}
+			if _, ok := r.Index().Lookup(repo.BlobHandle{Type: repo.DataBlob, ID: id}); !ok {
+				return nil, fmt.Errorf("partition %d block %d is missing from the copy", p.Number, b)
+			}
+			if !read {
+				if _, err := r.LoadBlob(ctx, repo.DataBlob, id); err != nil {
+					return nil, fmt.Errorf("reading the copy: %w", err)
+				}
+				read = true
+			}
+		}
+		maps[i] = ids
+	}
+	return maps, nil
 }
 
 func lockVolume(guidPath string) (windows.Handle, error) {

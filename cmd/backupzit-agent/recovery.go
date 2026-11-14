@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/max-zit/backupzit/internal/agent"
+	"github.com/max-zit/backupzit/internal/api"
 	"github.com/max-zit/backupzit/internal/imaging"
 )
 
@@ -68,7 +69,11 @@ func cmdRecovery(ctx context.Context, args []string) error {
 	fs.StringVar(&c.Server, "server", "", "server URL")
 	fs.StringVar(&c.Token, "token", "", "recovery/enrollment token")
 	fs.StringVar(&c.Fingerprint, "fingerprint", "", "server certificate fingerprint")
+	planFile := fs.String("plan", "", "restore plan prepared by the computer's own Windows (Unirea fork)")
 	_ = fs.Parse(args)
+	if *planFile != "" {
+		return recoveryWithPlan(ctx, *planFile)
+	}
 
 	fmt.Println("==============================================")
 	fmt.Println(" BackupZit recovery environment  " + version)
@@ -129,5 +134,55 @@ func cmdRecovery(ctx context.Context, args []string) error {
 	a.VSS = false
 	a.InventoryInterval = time.Minute
 	a.Run(ctx)
+	return nil
+}
+
+// recoveryWithPlan is the recovery environment the computer's own Windows
+// prepared for one restore plan (Unirea fork): no questions, the settings come
+// only from the given file inside the environment, and if the console cannot
+// be reached in ten minutes the computer starts its own Windows again,
+// untouched (the start into this environment was for one time only).
+func recoveryWithPlan(ctx context.Context, file string) error {
+	fmt.Println("==============================================")
+	fmt.Println(" Unirea Cloud: refacerea calculatorului  " + version)
+	fmt.Println("==============================================")
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return fmt.Errorf("restore plan: %w", err)
+	}
+	var plan api.RecoveryPlan
+	if err := json.Unmarshal(b, &plan); err != nil || plan.Server == "" || plan.Token == "" || !strings.HasPrefix(plan.Fingerprint, "SHA256:") {
+		return errors.New("the restore plan is damaged")
+	}
+	deadline := time.Now().Add(10 * time.Minute)
+	var cfg *agent.Config
+	for {
+		cfg, err = agent.EnrollRecovery(ctx, plan.Server, plan.Token, plan.Fingerprint, version)
+		if err == nil {
+			break
+		}
+		fmt.Println("Nu ma pot conecta inca la consola de backup:", err)
+		if strings.Contains(err.Error(), "token") || strings.Contains(err.Error(), "restore") || time.Now().After(deadline) {
+			fmt.Println("Nu s-a scris nimic pe disc. Calculatorul porneste din nou Windows-ul lui.")
+			return err // the start script restarts the computer
+		}
+		time.Sleep(10 * time.Second) // the network may still be starting
+	}
+	fmt.Println("Conectat. Consola verifica discul si porneste refacerea; nu opri calculatorul.")
+	a := agent.New(cfg, slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})), version)
+	a.VSS = false
+	a.InventoryInterval = 30 * time.Second
+	// The console answers within a few minutes (restore, or back to Windows);
+	// if nothing at all happens, leave rather than wait forever.
+	wctx, cancel := context.WithTimeout(ctx, 6*time.Hour)
+	defer cancel()
+	go func() {
+		time.Sleep(30 * time.Minute)
+		if !a.Busy() {
+			fmt.Println("Consola nu a raspuns. Nu s-a scris nimic; calculatorul porneste din nou Windows-ul lui.")
+			cancel()
+		}
+	}()
+	a.Run(wctx)
 	return nil
 }

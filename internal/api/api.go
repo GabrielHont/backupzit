@@ -109,6 +109,13 @@ const (
 	KindImageRestore = "image-restore" // image onto a disk
 	// KindImageFileRestore extracts files and folders from an image backup.
 	KindImageFileRestore = "image-file-restore"
+	// Unirea fork: a whole computer restored without boot media. On the
+	// computer's own Windows, KindRecoveryPrepare sets up a one-time start
+	// into a recovery environment that joins with RecoveryPlan; there,
+	// KindRecoveryReboot leaves it again (nothing written) and an image
+	// restore with RebootAfter starts the restored Windows.
+	KindRecoveryPrepare = "recovery-prepare"
+	KindRecoveryReboot  = "recovery-reboot"
 	// KindCopy copies the backups of a job to a second storage target.
 	KindCopy = "copy"
 	// KindVerify restores a random sample of a backup to prove it is restorable.
@@ -220,6 +227,14 @@ type Run struct {
 	// DriverPath lists extra driver folders (separated by ;).
 	NewHardware bool   `json:"new_hardware,omitempty"`
 	DriverPath  string `json:"driver_path,omitempty"`
+	// Unirea fork: the only disk the restore may overwrite (checked before
+	// any write), the Windows start repaired in every case, and a restart
+	// into the restored Windows once the result is reported.
+	ExpectDisk  *DiskIdentity `json:"expect_disk,omitempty"`
+	RepairBoot  bool          `json:"repair_boot,omitempty"`
+	RebootAfter bool          `json:"reboot_after,omitempty"`
+	// Recovery prepare: how the recovery environment joins the console.
+	RecoveryPlan *RecoveryPlan `json:"recovery_plan,omitempty"`
 
 	// Image file restore: partition to read; Includes lists paths inside it
 	// (`\Users\ana`) and RestoreTarget the folder ("" = original location).
@@ -524,4 +539,25 @@ type CommandResult struct {
 // AgentLog is the log an agent sends for a KindAgentLog run.
 type AgentLog struct {
 	Text string `json:"text"`
+}
+
+// DiskIdentity tells one disk apart from the others: partition table
+// identifier, size and model (Unirea fork).
+type DiskIdentity struct {
+	Style        string `json:"style"`
+	GPTDiskID    string `json:"gpt_disk_id,omitempty"`
+	MBRSignature uint32 `json:"mbr_signature,omitempty"`
+	Size         uint64 `json:"size"`
+	Model        string `json:"model,omitempty"`
+}
+
+// RecoveryPlan is what the recovery environment needs to join the console
+// for one restore: the console address, a single-use code, the pinned
+// certificate and the plan it belongs to (Unirea fork).
+type RecoveryPlan struct {
+	PlanID      int64        `json:"plan_id"`
+	Server      string       `json:"server"`
+	Token       string       `json:"token"`
+	Fingerprint string       `json:"fingerprint"`
+	Disk        DiskIdentity `json:"disk"`
 }

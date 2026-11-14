@@ -555,6 +555,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	s.registerAPITargets(mux)
 	s.registerAPIRecovery(mux)
 	s.registerAPIImage(mux)
+	s.registerAPIRestorePlans(mux)
 	s.registerAPIDocs(mux)
 	s.registerAPIAgentPackages(mux)
 	s.registerAPIAgentMutations(mux)

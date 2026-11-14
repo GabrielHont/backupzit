@@ -309,11 +309,31 @@ func (s *Store) EnrollAgent(ctx context.Context, req api.EnrollRequest) (api.Enr
 	}
 	req.Hostname, req.OS, req.Arch, req.Version = clip(req.Hostname, 255), clip(req.OS, 255), clip(req.Arch, 32), clip(req.Version, 64)
 	resp := api.EnrollResponse{AgentUUID: newUUID(), Secret: randomToken(32)}
-	_, err = tx.Exec(ctx, `INSERT INTO agents(uuid, secret_hash, hostname, repo_dir, os, arch, version, last_seen_at, recovery, enrollment_token_id,capabilities)
-		VALUES($1,$2,$3,$4,$5,$6,$7,now(),$8,$9,$10)`,
-		resp.AgentUUID, hashToken(resp.Secret), req.Hostname, agentRepoDir(req.Hostname, resp.AgentUUID), req.OS, req.Arch, req.Version, req.Recovery, tokenID, agentCapabilities(req.Capabilities))
+	var agentID int64
+	err = tx.QueryRow(ctx, `INSERT INTO agents(uuid, secret_hash, hostname, repo_dir, os, arch, version, last_seen_at, recovery, enrollment_token_id,capabilities)
+		VALUES($1,$2,$3,$4,$5,$6,$7,now(),$8,$9,$10) RETURNING id`,
+		resp.AgentUUID, hashToken(resp.Secret), req.Hostname, agentRepoDir(req.Hostname, resp.AgentUUID), req.OS, req.Arch, req.Version, req.Recovery, tokenID, agentCapabilities(req.Capabilities)).Scan(&agentID)
 	if err != nil {
 		return api.EnrollResponse{}, err
+	}
+	// Unirea fork: a restore plan's code admits only the recovery environment
+	// of that plan, once, while the plan is still waiting for it.
+	var planCode bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM restore_plans WHERE token_id=$1)`, tokenID).Scan(&planCode); err != nil {
+		return api.EnrollResponse{}, err
+	}
+	if planCode {
+		if !req.Recovery {
+			return api.EnrollResponse{}, errors.New("this code restores a computer; it cannot enroll an agent")
+		}
+		tag, err := tx.Exec(ctx, `UPDATE restore_plans SET recovery_agent_id=$1, state='connected', code='', message='', updated_at=now()
+			WHERE token_id=$2 AND state IN ('preparing','waiting')`, agentID, tokenID)
+		if err != nil {
+			return api.EnrollResponse{}, err
+		}
+		if tag.RowsAffected() != 1 {
+			return api.EnrollResponse{}, errors.New("this restore is no longer waiting for the computer")
+		}
 	}
 	return resp, tx.Commit(ctx)
 }
@@ -436,6 +456,9 @@ func (s *Store) TouchAgent(ctx context.Context, id int64, req api.PollRequest, r
 		hostname=COALESCE(NULLIF($2,''),hostname), os=COALESCE(NULLIF($3,''),os),
 		arch=COALESCE(NULLIF($4,''),arch), version=COALESCE(NULLIF($5,''),version),capabilities=$6 WHERE id=$1`,
 		id, req.Hostname, req.OS, req.Arch, req.Version, agentCapabilities(req.Capabilities))
+	if err == nil {
+		s.planOnPoll(ctx, id) // Unirea fork: restore plans
+	}
 	return err
 }
 
@@ -862,6 +885,11 @@ type Run struct {
 	DriverPath  string
 	// SystemRestore holds the options of a system-restore run (JSON).
 	SystemRestore json.RawMessage
+	// Unirea fork: the disk an image restore may overwrite (JSON
+	// api.DiskIdentity), boot repair, and the restore plan of the run.
+	ExpectDisk    json.RawMessage
+	RepairBoot    bool
+	RestorePlanID *int64
 	QueuedAt      time.Time
 	StartedAt     *time.Time
 	FinishedAt    *time.Time
@@ -889,7 +917,7 @@ func (r Run) Duration() time.Duration {
 
 const runCols = `r.id, r.agent_id, a.hostname, a.removed_at IS NOT NULL, r.job_id, COALESCE(j.name, NULLIF(r.job_name,'')), r.kind, r.status, r.trigger, r.repo_url,
 	r.target_id, r.paths, r.excludes, r.snapshot_id, r.restore_target, r.restore_verify, r.queued_at, r.started_at, r.finished_at,
-	r.stats, r.errors, r.message, r.image_disk, r.image_partitions, r.target_disk, r.keep_offline, r.details, r.expired, r.source_target_id, r.source_repo_url, r.anomaly, r.anomaly_ack, r.vm_restore, r.new_hardware, r.driver_path, r.system_restore, r.commands, r.cancel_reason`
+	r.stats, r.errors, r.message, r.image_disk, r.image_partitions, r.target_disk, r.keep_offline, r.details, r.expired, r.source_target_id, r.source_repo_url, r.anomaly, r.anomaly_ack, r.vm_restore, r.new_hardware, r.driver_path, r.system_restore, r.commands, r.cancel_reason, r.expect_disk, r.repair_boot, r.restore_plan_id`
 
 const runFrom = ` FROM runs r JOIN agents a ON a.id=r.agent_id LEFT JOIN jobs j ON j.id=r.job_id`
 
@@ -898,7 +926,7 @@ func scanRun(row pgx.Row) (Run, error) {
 	err := row.Scan(&r.ID, &r.AgentID, &r.Hostname, &r.AgentRemoved, &r.JobID, &r.JobName, &r.Kind, &r.Status,
 		&r.Trigger, &r.RepoURL, &r.TargetID, &r.Paths, &r.Excludes, &r.SnapshotID, &r.RestoreTarget, &r.RestoreVerify,
 		&r.QueuedAt, &r.StartedAt, &r.FinishedAt, &r.Stats, &r.Errors, &r.Message,
-		&r.ImageDisk, &r.ImagePartitions, &r.TargetDisk, &r.KeepOffline, &r.Details, &r.Expired, &r.SourceTargetID, &r.SourceRepoURL, &r.Anomaly, &r.AnomalyAck, &r.VMRestore, &r.NewHardware, &r.DriverPath, &r.SystemRestore, &r.Commands, &r.CancelReason)
+		&r.ImageDisk, &r.ImagePartitions, &r.TargetDisk, &r.KeepOffline, &r.Details, &r.Expired, &r.SourceTargetID, &r.SourceRepoURL, &r.Anomaly, &r.AnomalyAck, &r.VMRestore, &r.NewHardware, &r.DriverPath, &r.SystemRestore, &r.Commands, &r.CancelReason, &r.ExpectDisk, &r.RepairBoot, &r.RestorePlanID)
 	return r, err
 }
 
@@ -1025,6 +1053,7 @@ func (s *Store) FinishRun(ctx context.Context, agentID, runID int64, res api.Run
 	if a, err := s.checkAnomaly(ctx, runID); err == nil && a != "" {
 		slog.Warn("suspicious backup: possible ransomware or mass deletion", "run", runID, "why", a)
 	}
+	s.planOnFinish(ctx, runID, res) // Unirea fork: restore plans
 	return nil
 }
 

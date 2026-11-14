@@ -40,6 +40,7 @@ type RestoreOptions struct {
 	Image       int
 	Progress    func(done, total uint64)
 	KeepOffline bool
+	Expect      *DiskIdentity
 }
 
 // RestoreStats summarises an image restore.

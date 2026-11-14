@@ -44,8 +44,13 @@ func checkExtendedJobOptions(a Agent, j Job) error {
 }
 
 func agentCapabilities(reported []string) []string {
-	if slices.Contains(reported, api.CapabilityJobOptions) {
-		return []string{api.CapabilityJobOptions}
+	out := []string{}
+	// Only capabilities the console knows are kept (Unirea fork: plus the
+	// one-time start into a recovery environment for restore plans).
+	for _, c := range []string{api.CapabilityJobOptions, CapabilityRecoveryPrepare} {
+		if slices.Contains(reported, c) {
+			out = append(out, c)
+		}
 	}
-	return []string{}
+	return out
 }
