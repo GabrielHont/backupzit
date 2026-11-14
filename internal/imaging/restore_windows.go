@@ -48,7 +48,7 @@ type RestoreStats struct {
 // Restore writes a disk image to a physical disk: it recreates the
 // partition table with the original disk and partition identifiers (so
 // boot configuration keeps working) and writes every stored block.
-func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts RestoreOptions) (*RestoreStats, error) {
+func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts RestoreOptions) (_ *RestoreStats, rerr error) {
 	if opts.Image < 0 || opts.Image >= len(sn.Images) {
 		return nil, fmt.Errorf("snapshot %s has no disk image %d", sn.ID.Short(), opts.Image)
 	}
@@ -92,15 +92,29 @@ func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts Re
 		return nil, fmt.Errorf("the copy cannot be restored, nothing was written: %w", err)
 	}
 
-	// Try to lock and dismount volumes on the target disk so pending writes
-	// are flushed. Antivirus or indexing often keeps them open; taking the
-	// disk offline below force-dismounts them anyway.
-	for _, p := range target.Partitions {
-		if p.VolumeGUIDPath == "" {
-			continue
+	// Unirea fork: every partition of the target disk is taken out of use
+	// for the whole restore: locked (or dismounted by force when something
+	// keeps it open, as the recovery environment does with the EFI
+	// partition) and set offline so nothing mounts it again. Windows refuses
+	// raw writes inside a mounted volume. The partitions are reached by
+	// number, because the EFI partition often has no volume name.
+	var volumes []windows.Handle
+	written := false
+	defer func() {
+		for _, h := range volumes {
+			if rerr == nil || !written {
+				_, _ = ioctl(h, ioctlVolumeOnline, nil, 0)
+			}
+			_ = windows.CloseHandle(h)
 		}
-		if h, err := lockVolume(p.VolumeGUIDPath); err == nil {
-			defer windows.CloseHandle(h)
+	}()
+	for _, p := range target.Partitions {
+		h, err := takeVolume(ctx, target.Number, p)
+		if err != nil {
+			return nil, fmt.Errorf("partition %d of disk %d is in use (%w); nothing was written", p.Number, opts.TargetDisk, err)
+		}
+		if h != 0 {
+			volumes = append(volumes, h)
 		}
 	}
 
@@ -108,7 +122,9 @@ func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts Re
 	if err != nil {
 		return nil, fmt.Errorf("open target disk: %w", err)
 	}
-	defer windows.CloseHandle(dh)
+	// f owns the handle (os.File closes it, also when collected).
+	f := os.NewFile(uintptr(dh), physicalDrivePath(target.Number))
+	defer f.Close()
 
 	// Take the disk offline while writing so Windows does not mount the
 	// new, still empty partitions (raw writes to mounted volumes fail).
@@ -116,24 +132,20 @@ func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts Re
 		return nil, fmt.Errorf("take target disk offline: %w", err)
 	}
 	defer func() {
-		if !opts.KeepOffline {
+		// A disk left half written stays offline: nothing mounts and writes
+		// to it through the old partition table (Unirea fork).
+		if !opts.KeepOffline && (rerr == nil || !written) {
 			_ = setDiskOffline(dh, false)
 		}
 		_, _ = ioctl(dh, ioctlDiskUpdateProperties, nil, 0)
 	}()
 
 	// From here on the disk is changed (Unirea fork: reported to the console).
+	// The partitions' contents are written first, inside the old volumes
+	// that are locked above, and the new partition table last: a new table
+	// makes Windows create (and mount) new volumes that are not locked.
 	st := &RestoreStats{Written: true}
-	if err := writeLayout(dh, img, target.Size); err != nil {
-		return st, fmt.Errorf("write partition table: %w", err)
-	}
-	f := os.NewFile(uintptr(dh), physicalDrivePath(target.Number))
-
-	if img.Style == StyleMBR {
-		if err := restoreMBRBootCode(ctx, r, f, img); err != nil {
-			return st, err
-		}
-	}
+	written = true
 
 	var total, done uint64
 	for _, p := range img.Partitions {
@@ -158,8 +170,16 @@ func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts Re
 			if err != nil {
 				return st, fmt.Errorf("partition %d block %d: %w", p.Number, b, err)
 			}
-			if _, err := f.WriteAt(data, int64(p.Offset)+int64(b)*int64(p.BlockSize)); err != nil { // #nosec G115 -- length of a small buffer for a Windows API call
-				return st, fmt.Errorf("partition %d block %d: write: %w", p.Number, b, err)
+			off := int64(p.Offset) + int64(b)*int64(p.BlockSize) // #nosec G115 -- length of a small buffer for a Windows API call
+			if _, err := f.WriteAt(data, off); err != nil {
+				// A volume dismounted by force (not locked) mounts again when
+				// something opens it; dismount the disk's volumes and retry.
+				for _, h := range volumes {
+					_, _ = ioctl(h, fsctlDismountVolume, nil, 0)
+				}
+				if _, err2 := f.WriteAt(data, off); err2 != nil {
+					return st, fmt.Errorf("partition %d block %d (offset %d, %d bytes): write: %w (again: %v)", p.Number, b, off, len(data), err, err2)
+				}
 			}
 			st.BytesWritten += uint64(len(data))
 			done += uint64(len(data))
@@ -168,6 +188,17 @@ func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts Re
 			}
 		}
 		st.Partitions++
+	}
+	if err := windows.FlushFileBuffers(dh); err != nil {
+		return st, fmt.Errorf("flush: %w", err)
+	}
+	if err := writeLayout(dh, img, target.Size); err != nil {
+		return st, fmt.Errorf("write partition table: %w", err)
+	}
+	if img.Style == StyleMBR {
+		if err := restoreMBRBootCode(ctx, r, f, img); err != nil {
+			return st, err
+		}
 	}
 	if err := windows.FlushFileBuffers(dh); err != nil {
 		return st, fmt.Errorf("flush: %w", err)
@@ -214,19 +245,52 @@ func preflight(ctx context.Context, r *repo.Repository, img *repo.DiskImage) (ma
 	return maps, nil
 }
 
-func lockVolume(guidPath string) (windows.Handle, error) {
-	h, err := openDevice(strings.TrimSuffix(guidPath, `\`), true)
+// takeVolume takes the volume of one partition out of use for the restore:
+// lock and dismount, waiting a little for whoever has it open (indexing,
+// antivirus); if it stays open (the recovery environment keeps the EFI
+// partition's start settings loaded) it is dismounted by force, which Windows
+// allows without the lock. Then it is set offline so it does not mount again.
+// A partition without a volume (the reserved MSR) returns 0.
+func takeVolume(ctx context.Context, disk int, p Partition) (windows.Handle, error) {
+	paths := []string{fmt.Sprintf(`\\?\GLOBALROOT\Device\Harddisk%d\Partition%d`, disk, p.Number)}
+	if p.VolumeGUIDPath != "" {
+		paths = append(paths, strings.TrimSuffix(p.VolumeGUIDPath, `\`))
+	}
+	var h windows.Handle
+	var err error
+	for _, path := range paths {
+		if h, err = openDevice(path, true); err == nil {
+			break
+		}
+	}
 	if err != nil {
-		return 0, err
+		if p.VolumeGUIDPath == "" {
+			return 0, nil // no volume on this partition
+		}
+		return 0, fmt.Errorf("open: %w", err)
 	}
-	if _, err := ioctl(h, fsctlLockVolume, nil, 0); err != nil {
+	locked := false
+	for i := range 5 {
+		if _, err = ioctl(h, fsctlLockVolume, nil, 0); err == nil {
+			locked = true
+			break
+		}
+		if i < 4 {
+			select {
+			case <-ctx.Done():
+				_ = windows.CloseHandle(h)
+				return 0, ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+		}
+	}
+	if _, derr := ioctl(h, fsctlDismountVolume, nil, 0); derr != nil && !locked {
 		_ = windows.CloseHandle(h)
-		return 0, err
+		return 0, fmt.Errorf("lock: %v; dismount: %w", err, derr)
 	}
-	if _, err := ioctl(h, fsctlDismountVolume, nil, 0); err != nil {
-		_ = windows.CloseHandle(h)
-		return 0, err
-	}
+	// Offline keeps it from mounting again; a volume without a file system
+	// may refuse, which is harmless.
+	_, _ = ioctl(h, ioctlVolumeOffline, nil, 0)
 	return h, nil
 }
 

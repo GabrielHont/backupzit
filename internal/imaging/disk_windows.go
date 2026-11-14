@@ -31,6 +31,8 @@ const (
 	fsctlLockVolume                        = 0x00090018
 	fsctlDismountVolume                    = 0x00090020
 	fsctlAllowExtendedDasdIO               = 0x00090083
+	ioctlVolumeOffline                     = 0x0056C00C // Unirea fork
+	ioctlVolumeOnline                      = 0x0056C008
 	partitionStyleMBR                      = 0
 	partitionStyleGPT                      = 1
 	diskAttributeOffline            uint64 = 0x1
