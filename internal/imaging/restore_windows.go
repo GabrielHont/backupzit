@@ -158,19 +158,9 @@ func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts Re
 		if !p.Included {
 			continue
 		}
-		ids := maps[i]
-		for b, id := range ids {
-			if err := ctx.Err(); err != nil {
-				return st, err
-			}
-			if id.IsNull() {
-				continue
-			}
-			data, err := r.LoadBlob(ctx, repo.DataBlob, id)
-			if err != nil {
-				return st, fmt.Errorf("partition %d block %d: %w", p.Number, b, err)
-			}
-			off := int64(p.Offset) + int64(b)*int64(p.BlockSize) // #nosec G115 -- length of a small buffer for a Windows API call
+		load := func(ctx context.Context, id repo.ID) ([]byte, error) { return r.LoadBlob(ctx, repo.DataBlob, id) }
+		err := fetchOrdered(ctx, restoreReaders, maps[i], load, func(b int, data []byte) error {
+			off := int64(p.Offset) + int64(b)*int64(p.BlockSize) // #nosec G115 -- offsets on a disk, far below 2^63
 			if _, err := f.WriteAt(data, off); err != nil {
 				// A volume dismounted by force (not locked) mounts again when
 				// something opens it; dismount the disk's volumes and retry.
@@ -178,7 +168,7 @@ func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts Re
 					_, _ = ioctl(h, fsctlDismountVolume, nil, 0)
 				}
 				if _, err2 := f.WriteAt(data, off); err2 != nil {
-					return st, fmt.Errorf("partition %d block %d (offset %d, %d bytes): write: %w (again: %v)", p.Number, b, off, len(data), err, err2)
+					return fmt.Errorf("partition %d block %d (offset %d, %d bytes): write: %w (again: %v)", p.Number, b, off, len(data), err, err2)
 				}
 			}
 			st.BytesWritten += uint64(len(data))
@@ -186,6 +176,10 @@ func Restore(ctx context.Context, r *repo.Repository, sn *repo.Snapshot, opts Re
 			if opts.Progress != nil {
 				opts.Progress(done, total)
 			}
+			return nil
+		})
+		if err != nil {
+			return st, fmt.Errorf("partition %d: %w", p.Number, err)
 		}
 		st.Partitions++
 	}
