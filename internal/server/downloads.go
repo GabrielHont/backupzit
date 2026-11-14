@@ -82,16 +82,24 @@ func (s *Server) downloads() []download {
 
 var pkgVersionRe = regexp.MustCompile(`^backupzit-agent[-_](\d+)\.(\d+)\.(\d+)`)
 
+var versionRe = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)(?:-unirea\.(\d+))?`)
+
 // parseVersion reads "1.2.3" (with any suffix such as -legacy) into
-// comparable numbers.
+// comparable numbers. Unirea fork: "1.2.3-unirea.N" is 1.2.(3*100+N), the
+// version its Windows installer carries, so it is newer than the official
+// 1.2.3 and an agent that installed it is not offered it again.
 func parseVersion(v string) ([3]int, bool) {
-	m := regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)`).FindStringSubmatch(v)
+	m := versionRe.FindStringSubmatch(v)
 	if m == nil {
 		return [3]int{}, false
 	}
 	var out [3]int
 	for i := range out {
 		out[i], _ = strconv.Atoi(m[i+1])
+	}
+	if m[4] != "" {
+		n, _ := strconv.Atoi(m[4])
+		out[2] = out[2]*100 + n
 	}
 	return out, true
 }
