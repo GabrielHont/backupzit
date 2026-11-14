@@ -73,7 +73,7 @@ func (s *statusWindow) run(t *tray, ready chan<- bool) {
 		DataPath:  dataDir,
 		AutoFocus: true,
 		WindowOptions: webview2.WindowOptions{
-			Title: "BackupZit Agent", Width: 860, Height: 620, Center: true,
+			Title: "Unirea Backup Agent", Width: 860, Height: 620, Center: true,
 		},
 	})
 	if w == nil {

@@ -75,7 +75,7 @@ func summarize(st *localipc.Status, callErr error, now time.Time) Summary {
 	s := Summary{Percent: -1, Jobs: []JobView{}}
 	if st == nil {
 		s.State, s.Headline = "offline", "Agent service is not running"
-		s.Detail = "Start the \"BackupZit Agent\" service or reinstall the agent."
+		s.Detail = "Start the \"Unirea Backup Agent\" service or reinstall the agent."
 		if callErr != nil {
 			s.Error = callErr.Error()
 		}
@@ -168,7 +168,7 @@ func summarize(st *localipc.Status, callErr error, now time.Time) Summary {
 		s.Detail = strings.TrimSpace("Trying to reach " + st.ServerURL + ". " + st.LastError)
 	case len(st.Jobs) == 0 && st.JobsAt != nil:
 		s.State, s.Headline = "idle", "No backup jobs for this computer"
-		s.Detail = "Create a backup job for " + st.Hostname + " in the BackupZit console."
+		s.Detail = "Create a backup job for " + st.Hostname + " in the Unirea Cloud portal."
 	case failed > 0:
 		s.State, s.Headline = "error", "Last backup failed"
 		if failed > 1 {
@@ -203,7 +203,7 @@ func summarize(st *localipc.Status, callErr error, now time.Time) Summary {
 //
 //lint:ignore U1000 used by the Windows tray
 func (s Summary) tooltip() string {
-	t := "BackupZit — " + s.Headline
+	t := "Unirea Backup — " + s.Headline
 	if s.State == "running" && s.Percent >= 0 {
 		t += fmt.Sprintf(" (%d%%)", s.Percent)
 	} else if s.Status != nil && s.LastText != "" {

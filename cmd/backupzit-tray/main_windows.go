@@ -82,14 +82,14 @@ func isServiceSession() bool {
 
 func (t *tray) ready(showEvent windows.Handle, show bool) {
 	systray.SetIcon(icoOffline)
-	systray.SetTitle("BackupZit")
-	systray.SetTooltip("BackupZit")
-	t.status = systray.AddMenuItem("BackupZit", "")
+	systray.SetTitle("Unirea Backup")
+	systray.SetTooltip("Unirea Backup")
+	t.status = systray.AddMenuItem("Unirea Backup", "")
 	t.status.Disable()
 	t.detail = systray.AddMenuItem("", "")
 	t.detail.Disable()
 	systray.AddSeparator()
-	t.open = systray.AddMenuItem("Open BackupZit Agent", "Show the status of this computer's backups")
+	t.open = systray.AddMenuItem("Open Unirea Backup Agent", "Show the status of this computer's backups")
 	t.backup = systray.AddMenuItem("Back up now", "Start a backup job now")
 	for i := 0; i < maxJobItems; i++ {
 		it := t.backup.AddSubMenuItem("", "")
@@ -107,7 +107,7 @@ func (t *tray) ready(showEvent windows.Handle, show bool) {
 			}
 		}(i, it)
 	}
-	t.console = systray.AddMenuItem("Open console in browser", "Open the BackupZit management console")
+	t.console = systray.AddMenuItem("Open console in browser", "Open the backup console")
 	systray.AddSeparator()
 	t.hide = systray.AddMenuItem("Hide this icon", "The icon returns at the next sign-in; backups continue in the background")
 
@@ -232,7 +232,7 @@ func (t *tray) runJob(id int64) string {
 	defer cancel()
 	if _, err := localipc.Call(ctx, localipc.Request{Cmd: localipc.CmdRun, JobID: id}); err != nil {
 		msg := err.Error()
-		systray.SetTooltip("BackupZit — " + strings.TrimSpace(msg))
+		systray.SetTooltip("Unirea Backup — " + strings.TrimSpace(msg))
 		return msg
 	}
 	go func() {

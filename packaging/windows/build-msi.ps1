@@ -34,7 +34,7 @@ function Invoke-Sign([string[]]$Files) {
         Sort-Object FullName -Descending | Select-Object -First 1
     if (-not $signtool) { throw "signtool.exe not found; install the Windows SDK (Signing Tools)" }
     foreach ($f in $Files) {
-        & $signtool.FullName sign /sha1 $SignThumbprint /fd sha256 /tr $TimestampUrl /td sha256 /d "BackupZit Agent" $f
+        & $signtool.FullName sign /sha1 $SignThumbprint /fd sha256 /tr $TimestampUrl /td sha256 /d "Unirea Backup Agent" $f
         if ($LASTEXITCODE -ne 0) { throw "signing $f failed" }
     }
 }
@@ -65,7 +65,7 @@ try {
     $icon = Join-Path $PSScriptRoot "backupzit.ico"
     $cmdDir = [IO.Path]::Combine($root, 'cmd', 'backupzit-agent'); Push-Location $cmdDir
     try {
-        go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64 --manifest cli --icon $icon --product-name "BackupZit Agent" --file-description "BackupZit Agent" --copyright "MaxZit" --original-filename backupzit-agent.exe --product-version "$msiVersion.0" --file-version "$msiVersion.0"
+        go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64 --manifest cli --icon $icon --product-name "Unirea Backup Agent" --file-description "Unirea Backup Agent" --copyright "CYBERFIELD SRL; based on BackupZit by MaxZit (AGPL-3.0)" --original-filename backupzit-agent.exe --product-version "$msiVersion.0" --file-version "$msiVersion.0"
         if ($LASTEXITCODE -ne 0) { throw "go-winres failed" }
     } finally { Pop-Location }
     try {
@@ -77,7 +77,7 @@ try {
     $tray = Join-Path $work "backupzit-tray.exe"
     $trayDir = [IO.Path]::Combine($root, 'cmd', 'backupzit-tray'); Push-Location $trayDir
     try {
-        go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64 --manifest gui --icon $icon --product-name "BackupZit Agent" --file-description "BackupZit Agent tray" --copyright "MaxZit" --original-filename backupzit-tray.exe --product-version "$msiVersion.0" --file-version "$msiVersion.0"
+        go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64 --manifest gui --icon $icon --product-name "Unirea Backup Agent" --file-description "Unirea Backup Agent tray" --copyright "CYBERFIELD SRL; based on BackupZit by MaxZit (AGPL-3.0)" --original-filename backupzit-tray.exe --product-version "$msiVersion.0" --file-version "$msiVersion.0"
         if ($LASTEXITCODE -ne 0) { throw "go-winres failed" }
     } finally { Pop-Location }
     try {
