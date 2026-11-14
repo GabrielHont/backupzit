@@ -64,6 +64,15 @@ func scanPlan(row pgx.Row) (RestorePlan, error) {
 	return p, err
 }
 
+// ListRestorePlans returns the newest plans first.
+func (s *Store) ListRestorePlans(ctx context.Context, limit int) ([]RestorePlan, error) {
+	rows, err := s.db.Query(ctx, `SELECT `+planCols+` FROM restore_plans ORDER BY id DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (RestorePlan, error) { return scanPlan(r) })
+}
+
 func (s *Store) GetRestorePlan(ctx context.Context, id int64) (RestorePlan, error) {
 	p, err := scanPlan(s.db.QueryRow(ctx, `SELECT `+planCols+` FROM restore_plans WHERE id=$1`, id))
 	return p, notFound(err)

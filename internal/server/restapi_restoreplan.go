@@ -32,6 +32,9 @@ func (s *Server) registerAPIRestorePlans(mux *http.ServeMux) {
 		s.audit(r, "restore.plan", "plan #%d: image #%d onto agent %d", p.ID, req.RunID, req.AgentID)
 		return apiResponse{201, p}, nil
 	}))
+	mux.HandleFunc("GET /api/v1/restore-plans", s.api(PermRestore, func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return s.store.ListRestorePlans(r.Context(), 20)
+	}))
 	mux.HandleFunc("GET /api/v1/restore-plans/{id}", s.api(PermRestore, func(w http.ResponseWriter, r *http.Request) (any, error) {
 		id, err := pathInt(r, "id")
 		if err != nil {
