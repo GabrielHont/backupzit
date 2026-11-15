@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/max-zit/backupzit/internal/localipc"
 )
@@ -21,26 +23,56 @@ type Summary struct {
 	Status *localipc.Status `json:"status"`
 	Jobs   []JobView        `json:"jobs"`
 	Error  string           `json:"error,omitempty"`
+	// ActivityText is the last run of any kind, or the running one.
+	ActivityText string `json:"activity_text"`
 }
 
 // JobView is a job with display texts.
 type JobView struct {
 	localipc.Job
-	KindText string `json:"kind_text"`
-	LastText string `json:"last_text"`
-	NextText string `json:"next_text"`
+	KindText     string `json:"kind_text"`
+	LastText     string `json:"last_text"`
+	NextText     string `json:"next_text"`
+	StatusText   string `json:"status_text"`
+	ScheduleText string `json:"schedule_text"`
 }
 
-var kindText = map[string]string{"files": "Files", "image": "Disk image", "vm": "Proxmox VMs", "copy": "Backup copy"}
+// The texts are in Romanian: the agent is installed by Unirea Cloud's
+// customers, who are Romanian firms.
+
+var kindText = map[string]string{"files": "Fișiere", "image": "Întregul calculator", "vm": "Mașini virtuale Proxmox", "copy": "Copie a backupului"}
 
 var runKindText = map[string]string{
-	"backup": "Backup", "image-backup": "Disk image backup", "vm-backup": "VM backup", "copy": "Backup copy",
-	"restore": "Restore", "image-restore": "Disk restore", "image-file-restore": "File restore", "vm-restore": "VM restore",
-	"verify": "Restore test", "agent-update": "Agent update",
+	"backup": "Backup de fișiere", "image-backup": "Backup al întregului calculator", "vm-backup": "Backup de mașini virtuale", "copy": "Copie a backupului",
+	"restore": "Refacere de fișiere", "image-restore": "Refacerea calculatorului", "image-file-restore": "Refacere de fișiere", "vm-restore": "Refacere de mașină virtuală",
+	"verify": "Test de refacere", "agent-update": "Actualizarea programului",
+	"recovery-prepare": "Pregătirea refacerii", "recovery-reboot": "Repornire pentru refacere",
 }
 
-// when renders a time relative to now: "today 14:05", "yesterday 22:00",
-// "Mon 5 Oct 22:00".
+var statusText = map[string]string{
+	"queued": "în așteptare", "running": "în curs", "success": "reușit", "warning": "cu avertismente",
+	"failed": "eșuat", "cancelled": "oprit",
+}
+
+func runName(kind string) string {
+	if n := runKindText[kind]; n != "" {
+		return n
+	}
+	return kind
+}
+
+func statusName(st string) string {
+	if n := statusText[st]; n != "" {
+		return n
+	}
+	return st
+}
+
+var weekdays = [...]string{"dum", "lun", "mar", "mie", "joi", "vin", "sâm"}
+var months = [...]string{"ian", "feb", "mar", "apr", "mai", "iun", "iul", "aug", "sep", "oct", "nov", "dec"}
+
+// when renders a time relative to now: "azi 14:05", "ieri 22:00",
+// "lun 5 oct 22:00".
 func when(t time.Time, now time.Time) string {
 	t = t.Local()
 	y1, m1, d1 := t.Date()
@@ -49,13 +81,41 @@ func when(t time.Time, now time.Time) string {
 	diff := int(day(y1, m1, d1).Sub(day(y2, m2, d2)).Hours() / 24)
 	switch diff {
 	case 0:
-		return "today " + t.Format("15:04")
+		return "azi " + t.Format("15:04")
 	case -1:
-		return "yesterday " + t.Format("15:04")
+		return "ieri " + t.Format("15:04")
 	case 1:
-		return "tomorrow " + t.Format("15:04")
+		return "mâine " + t.Format("15:04")
 	}
-	return t.Format("Mon 2 Jan 15:04")
+	return fmt.Sprintf("%s %d %s %s", weekdays[t.Weekday()], t.Day(), months[t.Month()-1], t.Format("15:04"))
+}
+
+// scheduleText turns the simple cron schedules the portal sets into words
+// ("zilnic la 21:00"); anything else is shown as it is.
+func scheduleText(cron string) string {
+	f := strings.Fields(cron)
+	if len(f) != 5 || f[2] != "*" || f[3] != "*" {
+		if cron == "" || strings.EqualFold(cron, "manual") {
+			return "doar manual"
+		}
+		return cron
+	}
+	m, err1 := strconv.Atoi(f[0])
+	h, err2 := strconv.Atoi(f[1])
+	if err1 != nil || err2 != nil || m < 0 || m > 59 || h < 0 || h > 23 {
+		return cron
+	}
+	at := fmt.Sprintf("la %02d:%02d", h, m)
+	switch f[4] {
+	case "*":
+		return "zilnic " + at
+	case "1-5":
+		return "luni–vineri " + at
+	}
+	if d, err := strconv.Atoi(f[4]); err == nil && d >= 0 && d <= 7 {
+		return "în fiecare " + [...]string{"duminică", "luni", "marți", "miercuri", "joi", "vineri", "sâmbătă", "duminică"}[d] + " " + at
+	}
+	return cron
 }
 
 func humanBytes(b uint64) string {
@@ -63,32 +123,43 @@ func humanBytes(b uint64) string {
 	if b < unit {
 		return fmt.Sprintf("%d B", b)
 	}
+	// Romanian decimal comma: 1,5 GiB.
 	div, exp := uint64(unit), 0
 	for n := b / unit; n >= unit; n /= unit {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp])
+	return strings.Replace(fmt.Sprintf("%.1f %ciB", float64(b)/float64(div), "KMGTPE"[exp]), ".", ",", 1)
 }
 
 func summarize(st *localipc.Status, callErr error, now time.Time) Summary {
 	s := Summary{Percent: -1, Jobs: []JobView{}}
 	if st == nil {
-		s.State, s.Headline = "offline", "Agent service is not running"
-		s.Detail = "Start the \"Unirea Backup Agent\" service or reinstall the agent."
+		s.State, s.Headline = "offline", "Programul de backup nu rulează"
+		s.Detail = "Porniți serviciul „Unirea Backup Agent” din Servicii sau reinstalați programul."
 		if callErr != nil {
 			s.Error = callErr.Error()
 		}
 		return s
 	}
 	s.Status = st
+	switch {
+	case st.Current != nil:
+		s.ActivityText = runName(st.Current.Kind) + " — în curs"
+	case st.Last != nil:
+		name := st.Last.Job
+		if name == "" {
+			name = runName(st.Last.Kind)
+		}
+		s.ActivityText = name + " — " + statusName(st.Last.Status)
+	}
 	if !st.Enrolled {
-		s.State, s.Headline = "offline", "This computer is not enrolled yet"
+		s.State, s.Headline = "offline", "Calculatorul nu e încă înscris"
 		switch {
 		case st.ServerURL != "" && st.LastError != "":
-			s.Detail = "Enrolling with " + st.ServerURL + " failed: " + st.LastError + ". Create a new enrollment code on the console's agent port (usually :8443) and run the installer again."
+			s.Detail = "Înscrierea la " + st.ServerURL + " nu a reușit: " + st.LastError + ". Luați un cod nou din portalul Unirea Cloud și rulați din nou programul de instalare."
 		default:
-			s.Detail = "Run the installer again and paste the enrollment code from the console (Agents page)."
+			s.Detail = "Rulați din nou programul de instalare și lipiți codul de înscriere din portalul Unirea Cloud."
 		}
 		return s
 	}
@@ -99,7 +170,7 @@ func summarize(st *localipc.Status, callErr error, now time.Time) Summary {
 	failed, warned := 0, 0
 	for i := range st.Jobs {
 		j := st.Jobs[i]
-		v := JobView{Job: j, KindText: kindText[j.Kind]}
+		v := JobView{Job: j, KindText: kindText[j.Kind], StatusText: statusName(j.LastStatus), ScheduleText: scheduleText(j.Schedule)}
 		if v.KindText == "" {
 			v.KindText = j.Kind
 		}
@@ -109,7 +180,7 @@ func summarize(st *localipc.Status, callErr error, now time.Time) Summary {
 				lastJob = &st.Jobs[i]
 			}
 		} else {
-			v.LastText = "never"
+			v.LastText = "niciodată"
 		}
 		switch j.LastStatus {
 		case "failed":
@@ -123,31 +194,28 @@ func summarize(st *localipc.Status, callErr error, now time.Time) Summary {
 				next = j.NextRun
 			}
 		} else if !j.Enabled {
-			v.NextText = "disabled"
+			v.NextText = "oprit"
 		} else {
-			v.NextText = "manual only"
+			v.NextText = "doar manual"
 		}
 		s.Jobs = append(s.Jobs, v)
 	}
 	if lastJob != nil {
-		s.LastText = fmt.Sprintf("%s — %s, %s", when(*lastJob.LastFinished, now), lastJob.Name, lastJob.LastStatus)
+		s.LastText = fmt.Sprintf("%s — %s, %s", when(*lastJob.LastFinished, now), lastJob.Name, statusName(lastJob.LastStatus))
 	} else {
-		s.LastText = "no backup yet"
+		s.LastText = "niciun backup încă"
 	}
 	if next != nil {
 		s.NextText = when(*next, now)
 	} else {
-		s.NextText = "not scheduled"
+		s.NextText = "neprogramat"
 	}
 
 	switch {
 	case st.Current != nil:
 		c := st.Current
 		s.State = "running"
-		name := runKindText[c.Kind]
-		if name == "" {
-			name = c.Kind
-		}
+		name := runName(c.Kind)
 		if c.Job != "" {
 			name += " — " + c.Job
 		}
@@ -155,26 +223,26 @@ func summarize(st *localipc.Status, callErr error, now time.Time) Summary {
 		switch {
 		case c.Total > 0:
 			s.Percent = int(c.Done * 100 / c.Total) // #nosec G115 -- progress percentage, done <= total
-			s.Detail = fmt.Sprintf("%d%% · %s of %s read · started %s", s.Percent, humanBytes(c.Done), humanBytes(c.Total), when(c.Started, now))
+			s.Detail = fmt.Sprintf("%d%% · %s citiți din %s · început %s", s.Percent, humanBytes(c.Done), humanBytes(c.Total), when(c.Started, now))
 		case c.Files > 0 && c.Done > 0:
-			s.Detail = fmt.Sprintf("%d files · %s read · started %s", c.Files, humanBytes(c.Done), when(c.Started, now))
+			s.Detail = fmt.Sprintf("%d fișiere · %s citiți · început %s", c.Files, humanBytes(c.Done), when(c.Started, now))
 		case c.Files > 0:
-			s.Detail = fmt.Sprintf("%d files checked · started %s", c.Files, when(c.Started, now))
+			s.Detail = fmt.Sprintf("%d fișiere verificate · început %s", c.Files, when(c.Started, now))
 		default:
-			s.Detail = "started " + when(c.Started, now)
+			s.Detail = "început " + when(c.Started, now)
 		}
 	case !st.Connected && st.LastContact == nil:
-		s.State, s.Headline = "offline", "Not connected to the console"
-		s.Detail = strings.TrimSpace("Trying to reach " + st.ServerURL + ". " + st.LastError)
+		s.State, s.Headline = "offline", "Fără legătură cu serverul de backup"
+		s.Detail = strings.TrimSpace("Încerc să ajung la " + st.ServerURL + ". " + st.LastError)
 	case len(st.Jobs) == 0 && st.JobsAt != nil:
-		s.State, s.Headline = "idle", "No backup jobs for this computer"
-		s.Detail = "Create a backup job for " + st.Hostname + " in the Unirea Cloud portal."
+		s.State, s.Headline = "idle", "Calculatorul nu are încă backup programat"
+		s.Detail = "Programați backupul pentru " + st.Hostname + " din portalul Unirea Cloud."
 	case failed > 0:
-		s.State, s.Headline = "error", "Last backup failed"
+		s.State, s.Headline = "error", "Ultimul backup nu a reușit"
 		if failed > 1 {
-			s.Headline = fmt.Sprintf("%d backup jobs failed", failed)
+			s.Headline = fmt.Sprintf("%d backupuri nu au reușit", failed)
 		}
-		s.Detail = "Open the console for details."
+		s.Detail = "Detaliile sunt în portalul Unirea Cloud."
 		for _, j := range st.Jobs {
 			if j.LastStatus == "failed" && j.LastMessage != "" {
 				s.Detail = j.Name + ": " + j.LastMessage
@@ -182,18 +250,18 @@ func summarize(st *localipc.Status, callErr error, now time.Time) Summary {
 			}
 		}
 	case warned > 0:
-		s.State, s.Headline = "warning", "Backed up with warnings"
-		s.Detail = "Some files could not be read. Open the console for the list."
+		s.State, s.Headline = "warning", "Backup făcut, cu avertismente"
+		s.Detail = "Câteva fișiere nu au putut fi citite. Lista e în portalul Unirea Cloud."
 	case lastJob != nil:
-		s.State, s.Headline = "ok", "This computer is protected"
-		s.Detail = "Last backup " + when(*lastJob.LastFinished, now) + "."
+		s.State, s.Headline = "ok", "Calculatorul e protejat"
+		s.Detail = "Ultimul backup: " + when(*lastJob.LastFinished, now) + "."
 	default:
-		s.State, s.Headline = "idle", "Waiting for the first backup"
-		s.Detail = "Next backup " + s.NextText + "."
+		s.State, s.Headline = "idle", "Se așteaptă primul backup"
+		s.Detail = "Următorul backup: " + s.NextText + "."
 	}
 	if !st.Connected && st.LastContact != nil && st.Current == nil {
 		s.State = "offline"
-		s.Detail = "Console not reachable since " + when(*st.LastContact, now) + ". Scheduled backups start once it is back. " + s.Detail
+		s.Detail = "Fără legătură cu serverul de backup din " + when(*st.LastContact, now) + ". Backupurile programate pornesc când revine legătura. " + s.Detail
 	}
 	return s
 }
@@ -207,10 +275,12 @@ func (s Summary) tooltip() string {
 	if s.State == "running" && s.Percent >= 0 {
 		t += fmt.Sprintf(" (%d%%)", s.Percent)
 	} else if s.Status != nil && s.LastText != "" {
-		t += "\nLast: " + s.LastText
+		t += "\nUltimul: " + s.LastText
 	}
-	if len(t) > 127 {
-		t = t[:124] + "..."
+	// Cut on a character boundary (the texts have Romanian letters).
+	if utf8.RuneCountInString(t) > 127 {
+		r := []rune(t)
+		t = string(r[:124]) + "..."
 	}
 	return t
 }

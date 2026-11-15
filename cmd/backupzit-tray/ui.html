@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ro">
 <head>
 <meta charset="utf-8">
 <title>Unirea Backup Agent</title>
@@ -42,7 +42,7 @@ main { flex: 1; overflow: auto; padding: 20px 24px 8px; }
 .hero h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -.01em; }
 .hero p { margin: 3px 0 0; color: var(--muted); }
 .bar { height: 6px; border-radius: 3px; background: var(--line); margin-top: 10px; overflow: hidden; display: none; }
-.bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--brand-2), var(--run)); width: 0; transition: width .6s; }
+.bar i { display: block; height: 100%; background: var(--run); width: 0; transition: width .6s; }
 .s-running .bar { display: block; }
 .grow { flex: 1; min-width: 0; }
 .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 14px 0; }
@@ -77,30 +77,30 @@ footer .sp { flex: 1; }
 <header>
   <div class="logo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#f7f3ea" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="7" height="10" rx="1"/><rect x="14" y="11" width="7" height="10" rx="1"/><path d="M6 11V9C3 9 3 5 8 5C8 1 16 1 16 5C21 5 21 9 18 9V11"/></svg></div>
   <div><div class="brand">Unirea <span>Backup Agent</span></div><div class="host" id="host">&nbsp;</div></div>
-  <div class="conn"><span class="dot" id="dot"></span><span id="conn">Connecting…</span></div>
+  <div class="conn"><span class="dot" id="dot"></span><span id="conn">Se conectează…</span></div>
 </header>
 <main>
   <section class="hero s-offline" id="hero">
     <div class="badge" id="badge"></div>
     <div class="grow">
-      <h1 id="headline">Loading…</h1>
+      <h1 id="headline">Se încarcă…</h1>
       <p id="detail"></p>
       <div class="bar"><i id="bar"></i></div>
     </div>
   </section>
   <div class="facts">
-    <div class="fact"><b>Last backup</b><span id="last">—</span></div>
-    <div class="fact"><b>Next backup</b><span id="next">—</span></div>
-    <div class="fact"><b>Last activity</b><span id="activity">—</span></div>
+    <div class="fact"><b>Ultimul backup</b><span id="last">—</span></div>
+    <div class="fact"><b>Următorul backup</b><span id="next">—</span></div>
+    <div class="fact"><b>Ultima activitate</b><span id="activity">—</span></div>
   </div>
-  <h2>Backup jobs of this computer</h2>
-  <div class="jobs" id="jobs"><div class="empty">Loading…</div></div>
+  <h2>Backupurile acestui calculator</h2>
+  <div class="jobs" id="jobs"><div class="empty">Se încarcă…</div></div>
   <div class="err" id="err"></div>
 </main>
 <footer>
   <span id="ver"></span><span class="sp"></span>
   <span id="server"></span>
-  <button class="ghost" id="console">Open console</button>
+  <button class="ghost" id="console">Deschide consola</button>
 </footer>
 <script>
 const icons = {
@@ -124,22 +124,22 @@ function render(s) {
   $('bar').style.width = (s.percent >= 0 ? s.percent : 15) + '%';
   $('last').textContent = s.last_text || '—';
   $('next').textContent = s.next_text || '—';
-  $('activity').textContent = st.last ? (st.last.job || st.last.kind) + ' — ' + st.last.status : (st.current ? 'running now' : '—');
-  $('host').textContent = st.hostname ? 'This computer: ' + st.hostname : '';
+  $('activity').textContent = s.activity_text || '—';
+  $('host').textContent = st.hostname ? 'Acest calculator: ' + st.hostname : '';
   $('dot').className = 'dot' + (st.connected ? ' on' : '');
-  $('conn').textContent = st.connected ? 'Connected to console' : (s.status ? 'Console not reachable' : 'Agent service not running');
+  $('conn').textContent = st.connected ? 'Conectat la serverul de backup' : (s.status ? 'Fără legătură cu serverul' : 'Programul nu rulează');
   $('server').textContent = st.server_url || '';
   $('console').disabled = !st.server_url;
-  $('ver').textContent = st.version ? 'Agent ' + st.version : '';
+  $('ver').textContent = st.version ? 'Versiunea ' + st.version : '';
   const jobs = s.jobs || [];
-  if (!s.status) { $('jobs').innerHTML = '<div class="empty">The agent service is not running.</div>'; return; }
-  if (!jobs.length) { $('jobs').innerHTML = '<div class="empty">' + (st.jobs_at ? 'No backup jobs for this computer yet. Create one in the console.' : 'Loading jobs from the console…') + '</div>'; return; }
+  if (!s.status) { $('jobs').innerHTML = '<div class="empty">Programul de backup nu rulează.</div>'; return; }
+  if (!jobs.length) { $('jobs').innerHTML = '<div class="empty">' + (st.jobs_at ? 'Calculatorul nu are încă backup programat. Îl programați din portalul Unirea Cloud.' : 'Se încarcă backupurile…') + '</div>'; return; }
   $('jobs').innerHTML = jobs.map(j => {
-    const last = j.running ? '<span class="pill running">running</span>' :
-      (j.last_status ? '<span class="pill ' + esc(j.last_status) + '">' + esc(j.last_status) + '</span> ' : '') + esc(j.last_text);
-    return '<div class="job"><div><div class="name" title="' + esc(j.last_message) + '">' + esc(j.name) + '</div><div class="kind">' + esc(j.kind_text) + ' · ' + esc(j.schedule) + '</div></div>' +
-      '<div class="col"><b>Last</b>' + last + '</div><div class="col"><b>Next</b>' + esc(j.next_text) + '</div>' +
-      '<div><button data-job="' + j.id + '"' + (j.running || busy[j.id] ? ' disabled' : '') + '>' + (j.running ? 'Running…' : 'Back up now') + '</button></div></div>';
+    const last = j.running ? '<span class="pill running">în curs</span>' :
+      (j.last_status ? '<span class="pill ' + esc(j.last_status) + '">' + esc(j.status_text) + '</span> ' : '') + esc(j.last_text);
+    return '<div class="job"><div><div class="name" title="' + esc(j.last_message) + '">' + esc(j.name) + '</div><div class="kind">' + esc(j.kind_text) + ' · ' + esc(j.schedule_text) + '</div></div>' +
+      '<div class="col"><b>Ultimul</b>' + last + '</div><div class="col"><b>Următorul</b>' + esc(j.next_text) + '</div>' +
+      '<div><button data-job="' + j.id + '"' + (j.running || busy[j.id] ? ' disabled' : '') + '>' + (j.running ? 'În curs…' : 'Fă backup acum') + '</button></div></div>';
   }).join('');
 }
 
@@ -148,7 +148,7 @@ document.addEventListener('click', async e => {
   const b = e.target.closest('button[data-job]');
   if (b) {
     const id = Number(b.dataset.job);
-    busy[id] = true; b.disabled = true; b.textContent = 'Starting…'; $('err').textContent = '';
+    busy[id] = true; b.disabled = true; b.textContent = 'Pornește…'; $('err').textContent = '';
     const err = await window.bzRun(id);
     if (err) { $('err').textContent = err; }
     setTimeout(() => { delete busy[id]; }, 8000);

@@ -89,8 +89,8 @@ func (t *tray) ready(showEvent windows.Handle, show bool) {
 	t.detail = systray.AddMenuItem("", "")
 	t.detail.Disable()
 	systray.AddSeparator()
-	t.open = systray.AddMenuItem("Open Unirea Backup Agent", "Show the status of this computer's backups")
-	t.backup = systray.AddMenuItem("Back up now", "Start a backup job now")
+	t.open = systray.AddMenuItem("Deschide Unirea Backup Agent", "Arată starea backupului acestui calculator")
+	t.backup = systray.AddMenuItem("Fă backup acum", "Pornește acum un backup")
 	for i := 0; i < maxJobItems; i++ {
 		it := t.backup.AddSubMenuItem("", "")
 		it.Hide()
@@ -107,9 +107,9 @@ func (t *tray) ready(showEvent windows.Handle, show bool) {
 			}
 		}(i, it)
 	}
-	t.console = systray.AddMenuItem("Open console in browser", "Open the backup console")
+	t.console = systray.AddMenuItem("Deschide consola de backup", "Deschide consola de backup în browser")
 	systray.AddSeparator()
-	t.hide = systray.AddMenuItem("Hide this icon", "The icon returns at the next sign-in; backups continue in the background")
+	t.hide = systray.AddMenuItem("Ascunde iconița", "Iconița revine la următoarea conectare; backupul continuă în fundal")
 
 	systray.SetOnTapped(func() { t.win.show(t) })
 	go func() {
@@ -166,7 +166,7 @@ func (t *tray) refresh() Summary {
 	}
 	t.status.SetTitle(head)
 	if sum.Status != nil {
-		t.detail.SetTitle("Last: " + sum.LastText + "   Next: " + sum.NextText)
+		t.detail.SetTitle("Ultimul: " + sum.LastText + "   Următorul: " + sum.NextText)
 		t.detail.Show()
 	} else {
 		t.detail.Hide()
@@ -178,10 +178,10 @@ func (t *tray) refresh() Summary {
 		}
 		title := j.Name
 		if j.Running {
-			title += "  (running)"
+			title += "  (în curs)"
 		}
 		t.jobItems[n].SetTitle(title)
-		t.jobItems[n].SetTooltip(j.KindText + " · last " + j.LastText + " · next " + j.NextText)
+		t.jobItems[n].SetTooltip(j.KindText + " · ultimul " + j.LastText + " · următorul " + j.NextText)
 		if j.Running {
 			t.jobItems[n].Disable()
 		} else {
@@ -231,8 +231,8 @@ func (t *tray) runJob(id int64) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	if _, err := localipc.Call(ctx, localipc.Request{Cmd: localipc.CmdRun, JobID: id}); err != nil {
-		msg := err.Error()
-		systray.SetTooltip("Unirea Backup — " + strings.TrimSpace(msg))
+		msg := "Backupul nu a pornit: " + strings.TrimSpace(err.Error())
+		systray.SetTooltip(Summary{Headline: msg}.tooltip())
 		return msg
 	}
 	go func() {
