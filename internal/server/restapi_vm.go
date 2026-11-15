@@ -67,10 +67,11 @@ func runGuests(r Run) []apiVMGuest {
 // Unirea portal (the web UI has its own form).
 func (s *Server) registerAPIVM(mux *http.ServeMux) {
 	// mode "new" creates a second VM next to the original (Hyper-V: new name
-	// and MAC addresses; Proxmox: the next free ID); "replace" puts the
-	// backup in place of the original, which is turned off first (Hyper-V
-	// keeps its old disks renamed). The restored VM is started only on
-	// request.
+	// and MAC addresses; Proxmox: the next free ID), started only on
+	// request. "replace" is refused here: the agent finds the VM to replace
+	// by its GUID and, when that is gone, by its name, and the inventory is
+	// up to 15 minutes old, so a VM created meanwhile under that name could
+	// be overwritten. In place, from the web UI.
 	mux.HandleFunc("POST /api/v1/runs/{id}/vm-restore", s.api(PermRestore, func(w http.ResponseWriter, r *http.Request) (any, error) {
 		id, err := pathInt(r, "id")
 		if err != nil {
@@ -101,7 +102,7 @@ func (s *Server) registerAPIVM(mux *http.ServeMux) {
 		case "new":
 			o.NewVMID = -1
 		case "replace":
-			o.Overwrite = true
+			return nil, apiErr(409, "restore this guest in place from the console's web UI")
 		default:
 			return nil, apiErr(400, `mode is "new" or "replace"`)
 		}
@@ -126,23 +127,7 @@ func (s *Server) registerAPIVM(mux *http.ServeMux) {
 		}
 		agentID, cluster := s.clusterRestoreAgent(r.Context(), req.AgentID, o.VMID, o.NewVMID == 0)
 		o.HVCluster = cluster
-		onHost := false // the VM of the backup (same ID: on Hyper-V, same GUID) is on the host now
-		for _, g := range inv.Guests {
-			onHost = onHost || (g.VMID == o.VMID && (g.Node == "" || g.Node == inv.Node))
-		}
-		if req.Mode == "replace" {
-			// Proxmox VE reuses guest IDs, so the guest there now may not be
-			// the one in the backup; and a restore in place of a guest that
-			// is gone would recreate it by name on Hyper-V, which could be
-			// another VM's. In place only over the very same VM, on Hyper-V.
-			if a.Platform() != "hyperv" || cluster {
-				return nil, apiErr(409, "restore this guest in place from the console's web UI")
-			}
-			if !onHost {
-				return nil, apiErr(409, "VM %d is not on %s any more; restore it as a new VM", o.VMID, a.Hostname)
-			}
-		}
-		if req.Mode == "new" && o.Name != "" {
+		if o.Name != "" {
 			for _, g := range inv.Guests {
 				if strings.EqualFold(strings.TrimSpace(g.Name), o.Name) {
 					return nil, apiErr(409, "a VM named %q already exists on %s", o.Name, a.Hostname)
@@ -156,15 +141,17 @@ func (s *Server) registerAPIVM(mux *http.ServeMux) {
 			return nil, err
 		}
 		for _, x := range active {
-			if x.Kind == api.KindVMRestore {
-				if prev := vmRestoreOptions(x); prev != nil && prev.VMID == o.VMID {
-					return nil, apiErr(409, "VM %d is already being restored on %s", o.VMID, a.Hostname)
-				}
+			prev := vmRestoreOptions(x)
+			if x.Kind != api.KindVMRestore || prev == nil {
+				continue
 			}
-			// In place starts now or not at all: behind other work it could
-			// replace the VM long after the owner asked.
-			if req.Mode == "replace" {
-				return nil, apiErr(409, "%s is busy with another task; try again when it has finished", a.Hostname)
+			if prev.VMID == o.VMID {
+				return nil, apiErr(409, "VM %d is already being restored on %s", o.VMID, a.Hostname)
+			}
+			// A failed restore removes the VMs of its name: two restores under
+			// one name could take each other's VM down.
+			if o.Name != "" && strings.EqualFold(strings.TrimSpace(prev.Name), o.Name) {
+				return nil, apiErr(409, "a VM named %q is already being restored on %s", o.Name, a.Hostname)
 			}
 		}
 		rid, err := s.store.QueueVMRestore(r.Context(), run.ID, agentID, o)

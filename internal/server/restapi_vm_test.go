@@ -160,7 +160,7 @@ func TestAPIVirtualMachineRestore(t *testing.T) {
 			t.Fatalf("claim backup: %v %+v", err, r)
 		}
 		res := api.RunResult{Status: status, SnapshotID: strings.Repeat("c3", 32),
-			Details: json.RawMessage(`{"guests":[{"vmid":1000000009,"type":"qemu","name":"lab","disks":1,"size":161061273600,"platform":"hyperv"}]}`)}
+			Details: json.RawMessage(`{"guests":[{"vmid":1000000009,"type":"qemu","name":"lab","disks":1,"size":161061273600,"platform":"hyperv"},{"vmid":1000000010,"type":"qemu","name":"web","disks":1,"size":1024,"platform":"hyperv"}]}`)}
 		if status == api.StatusFailed {
 			res.SnapshotID, res.Message = "", "x"
 		}
@@ -174,7 +174,7 @@ func TestAPIVirtualMachineRestore(t *testing.T) {
 
 	// The run lists the VMs it holds.
 	code, body = apiJSONCall(t, e, view, "GET", fmt.Sprintf("/api/v1/runs/%d", run), "")
-	if code != 200 || !strings.Contains(body, `"guests":[{"vmid":1000000009,"name":"lab","type":"qemu","platform":"hyperv","disks":1,"size":161061273600}]`) {
+	if code != 200 || !strings.Contains(body, `"guests":[{"vmid":1000000009,"name":"lab","type":"qemu","platform":"hyperv","disks":1,"size":161061273600},{"vmid":1000000010,"name":"web","type":"qemu","platform":"hyperv","disks":1,"size":1024}]`) {
 		t.Fatalf("run guests: %d %s", code, body)
 	}
 
@@ -203,41 +203,51 @@ func TestAPIVirtualMachineRestore(t *testing.T) {
 		return o
 	}
 
-	// In place of the original (still on the host), started afterwards: only
-	// when the host has nothing else queued, so it starts now.
-	code, body = restore(op, run, `{"vmid":1000000009,"mode":"replace","start":true,"agent_id":`+fmt.Sprint(hv)+`}`)
-	if code != 202 {
-		t.Fatalf("restore in place: %d %s", code, body)
-	}
-	inPlace := queued(body)
-	if o := options(inPlace); inPlace.AgentID != hv || o.NewVMID != 0 || !o.Overwrite || !o.Start {
-		t.Fatalf("in place: %+v", o)
-	}
-	// The same VM is not restored twice at once, in any mode.
-	if code, out := restore(op, run, `{"vmid":1000000009,"mode":"new"}`); code != 409 || !strings.Contains(out, "already being restored") {
-		t.Fatalf("second restore of the same VM: %d %s", code, out)
-	}
-	if r, err := e.store.ClaimRun(e.ctx, hv); err != nil || r == nil || r.ID != inPlace.ID {
-		t.Fatalf("claim restore: %v %+v", err, r)
-	}
-	if err := e.store.FinishRun(e.ctx, hv, inPlace.ID, api.RunResult{Status: api.StatusSuccess}); err != nil {
-		t.Fatal(err)
-	}
-
-	// A second VM next to the original, on the host of the backup, with the
-	// name the portal chose.
-	code, body = restore(op, run, `{"vmid":1000000009,"mode":"new","name":"lab (refăcută 2026-11-15 12-30-05)"}`)
+	// A second VM next to the original, started afterwards, on the host of
+	// the backup, with the name the portal chose.
+	code, body = restore(op, run, `{"vmid":1000000009,"mode":"new","name":"lab (refăcută 2026-11-15 12-30-05)","start":true,"agent_id":`+fmt.Sprint(hv)+`}`)
 	if code != 202 {
 		t.Fatalf("restore as new: %d %s", code, body)
 	}
-	r := queued(body)
-	if o := options(r); r.AgentID != hv || o.VMID != 1000000009 || o.NewVMID != -1 || o.Overwrite || o.Start ||
-		o.Name != "lab (refăcută 2026-11-15 12-30-05)" || r.SnapshotID != strings.Repeat("c3", 32) {
-		t.Fatalf("as new: agent %d %+v", r.AgentID, o)
+	first := queued(body)
+	if o := options(first); first.AgentID != hv || o.VMID != 1000000009 || o.NewVMID != -1 || o.Overwrite || !o.Start ||
+		o.Name != "lab (refăcută 2026-11-15 12-30-05)" || first.SnapshotID != strings.Repeat("c3", 32) {
+		t.Fatalf("as new: agent %d %+v", first.AgentID, o)
 	}
-	// While it is queued, in place is refused: the host is busy.
-	if code, out := restore(op, run, `{"vmid":1000000009,"mode":"replace"}`); code != 409 {
-		t.Fatalf("in place while busy: %d %s", code, out)
+	// The same VM is not restored twice at once.
+	if code, out := restore(op, run, `{"vmid":1000000009,"mode":"new","name":"lab 2"}`); code != 409 || !strings.Contains(out, "already being restored") {
+		t.Fatalf("second restore of the same VM: %d %s", code, out)
+	}
+	// Nor is another VM restored under the name still being restored (a
+	// failed restore removes the VMs of its name).
+	if code, out := restore(op, run, `{"vmid":1000000010,"mode":"new","name":"LAB (refăcută 2026-11-15 12-30-05)"}`); code != 409 || !strings.Contains(out, "already being restored") {
+		t.Fatalf("second restore under the same name: %d %s", code, out)
+	}
+	// Another VM under its own name is fine.
+	code, body = restore(op, run, `{"vmid":1000000010,"mode":"new","name":"web (refăcută 2026-11-15 12-30-05)"}`)
+	if code != 202 {
+		t.Fatalf("restore of another VM: %d %s", code, body)
+	}
+	second := queued(body)
+	for _, r := range []*server.Run{first, second} {
+		if c, err := e.store.ClaimRun(e.ctx, hv); err != nil || c == nil || c.ID != r.ID {
+			t.Fatalf("claim restore: %v %+v", err, c)
+		}
+		if err := e.store.FinishRun(e.ctx, hv, r.ID, api.RunResult{Status: api.StatusSuccess}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Once they have finished, the name is free again.
+	code, body = restore(op, run, `{"vmid":1000000010,"mode":"new","name":"lab (refăcută 2026-11-15 12-30-05)"}`)
+	if code != 202 {
+		t.Fatalf("restore after the first finished: %d %s", code, body)
+	}
+	third := queued(body)
+	if c, err := e.store.ClaimRun(e.ctx, hv); err != nil || c == nil || c.ID != third.ID {
+		t.Fatalf("claim restore: %v %+v", err, c)
+	}
+	if err := e.store.FinishRun(e.ctx, hv, third.ID, api.RunResult{Status: api.StatusSuccess}); err != nil {
+		t.Fatal(err)
 	}
 
 	refused := []struct {
@@ -248,6 +258,8 @@ func TestAPIVirtualMachineRestore(t *testing.T) {
 		code  int
 	}{
 		{"viewer", view, run, `{"vmid":1000000009,"mode":"new"}`, 403},
+		// The agent can fall back to the VM's name: in place, from the web UI only.
+		{"in place", op, run, `{"vmid":1000000009,"mode":"replace"}`, 409},
 		{"no mode", op, run, `{"vmid":1000000009}`, 400},
 		{"unknown mode", op, run, `{"vmid":1000000009,"mode":"clone"}`, 400},
 		{"vm not in the backup", op, run, `{"vmid":42,"mode":"new"}`, 409},
@@ -269,16 +281,6 @@ func TestAPIVirtualMachineRestore(t *testing.T) {
 	if code, out := restore(op, run, `{"vmid":1000000009,"mode":"new","name":"other"}`); code != 409 || !strings.Contains(out, "not connected") {
 		t.Errorf("offline host: %d %s", code, out)
 	}
-	// In place over a VM that is gone from the host is refused (it would be
-	// recreated by name, perhaps over another VM).
-	if err := e.store.TouchAgent(e.ctx, hv, api.PollRequest{Hostname: "HV9", OS: "Windows Server 2025", Version: "test",
-		Hypervisor: json.RawMessage(`{"platform":"hyperv","node":"HV9","guests":[],"storage":["D:\\VMs"]}`)}, ""); err != nil {
-		t.Fatal(err)
-	}
-	if code, out := restore(op, run, `{"vmid":1000000009,"mode":"replace"}`); code != 409 || !strings.Contains(out, "not on HV9 any more") {
-		t.Errorf("in place over a gone VM: %d %s", code, out)
-	}
-
 	// A run that does not exist.
 	if code, out := apiJSONCall(t, e, op, "POST", "/api/v1/runs/999999/vm-restore", `{"vmid":1,"mode":"new"}`); code != 404 {
 		t.Errorf("missing run: %d %s", code, out)
