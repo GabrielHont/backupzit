@@ -368,6 +368,8 @@ type apiRun struct {
 	Stats      json.RawMessage `json:"stats,omitempty"`
 	Suspicious string          `json:"suspicious,omitempty"`
 	Expired    bool            `json:"expired"`
+	// Guests of a VM backup run (Unirea portal: what can be restored).
+	Guests []apiVMGuest `json:"guests,omitempty"`
 }
 
 func toAPIAgent(a Agent) apiAgent {
@@ -394,7 +396,7 @@ func toAPIRunJSON(r Run) apiRun {
 	return apiRun{ID: r.ID, Kind: r.Kind, Status: r.Status, Trigger: r.Trigger, AgentID: r.AgentID, Agent: r.Hostname,
 		JobID: r.JobID, Job: deref(r.JobName), QueuedAt: r.QueuedAt, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt,
 		DurationS: int(r.Duration().Seconds()), Snapshot: r.SnapshotID, Message: r.Message, Errors: r.Errors,
-		Stats: r.Stats, Suspicious: r.Anomaly, Expired: r.Expired}
+		Stats: r.Stats, Suspicious: r.Anomaly, Expired: r.Expired, Guests: runGuests(r)}
 }
 
 func pathInt(r *http.Request, name string) (int64, error) {
@@ -555,6 +557,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	s.registerAPITargets(mux)
 	s.registerAPIRecovery(mux)
 	s.registerAPIImage(mux)
+	s.registerAPIVM(mux)
 	s.registerAPIRestorePlans(mux)
 	s.registerAPIDocs(mux)
 	s.registerAPIAgentPackages(mux)

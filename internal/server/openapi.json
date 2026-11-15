@@ -2504,6 +2504,73 @@
         }
       }
     },
+    "/runs/{id}/vm-restore": {
+      "post": {
+        "operationId": "restoreRunVM",
+        "summary": "Queue a restore of a virtual machine from a VM backup",
+        "description": "Unirea fork. Returns the created run (kind vm-restore). mode \"new\" creates a second VM next to the original (Hyper-V: new name and MAC addresses; Proxmox VE: the next free ID); \"replace\" puts the backup in place of the original, which is turned off first (Hyper-V keeps the old disks renamed). The VM must be in the guests of the run, and the receiving agent a hypervisor host of the same platform.",
+        "x-minimum-role": "restore",
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "202": {
+            "description": "Success.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Run"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Object ID.",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VMRestoreCreate"
+              }
+            }
+          }
+        }
+      }
+    },
     "/restore-plans": {
       "post": {
         "operationId": "createRestorePlan",
@@ -3439,6 +3506,40 @@
           },
           "expired": {
             "type": "boolean"
+          },
+          "guests": {
+            "type": "array",
+            "description": "Unirea fork: the virtual machines held by a VM backup run (absent for other runs).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "vmid": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "platform": {
+                  "type": "string",
+                  "enum": [
+                    "proxmox",
+                    "hyperv",
+                    "vmware"
+                  ]
+                },
+                "disks": {
+                  "type": "integer"
+                },
+                "size": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "Bytes of the virtual disks."
+                }
+              }
+            }
           }
         },
         "required": [
@@ -4667,6 +4768,42 @@
           "created_at",
           "updated_at"
         ]
+      },
+      "VMRestoreCreate": {
+        "type": "object",
+        "required": [
+          "vmid",
+          "mode"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "vmid": {
+            "type": "integer",
+            "description": "A guest from the guests of the run."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "new",
+              "replace"
+            ],
+            "description": "new: a second VM next to the original; replace: in place of the original."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Name of the restored VM; empty means the original name (new: with a restore date added on Hyper-V)."
+          },
+          "start": {
+            "type": "boolean",
+            "description": "Start the VM after the restore."
+          },
+          "agent_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Hypervisor host that restores the VM; 0 or absent means the host of the backup."
+          }
+        }
       }
     },
     "responses": {
