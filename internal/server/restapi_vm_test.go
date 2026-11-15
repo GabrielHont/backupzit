@@ -203,22 +203,41 @@ func TestAPIVirtualMachineRestore(t *testing.T) {
 		return o
 	}
 
-	// A second VM next to the original, on the host of the backup.
-	code, body = restore(op, run, `{"vmid":1000000009,"mode":"new"}`)
-	if code != 202 {
-		t.Fatalf("restore as new: %d %s", code, body)
-	}
-	r := queued(body)
-	if o := options(r); r.AgentID != hv || o.VMID != 1000000009 || o.NewVMID != -1 || o.Overwrite || o.Start || r.SnapshotID != strings.Repeat("c3", 32) {
-		t.Fatalf("as new: agent %d %+v", r.AgentID, o)
-	}
-	// In place of the original, started afterwards.
+	// In place of the original (still on the host), started afterwards: only
+	// when the host has nothing else queued, so it starts now.
 	code, body = restore(op, run, `{"vmid":1000000009,"mode":"replace","start":true,"agent_id":`+fmt.Sprint(hv)+`}`)
 	if code != 202 {
 		t.Fatalf("restore in place: %d %s", code, body)
 	}
-	if o := options(queued(body)); o.NewVMID != 0 || !o.Overwrite || !o.Start {
+	inPlace := queued(body)
+	if o := options(inPlace); inPlace.AgentID != hv || o.NewVMID != 0 || !o.Overwrite || !o.Start {
 		t.Fatalf("in place: %+v", o)
+	}
+	// The same VM is not restored twice at once, in any mode.
+	if code, out := restore(op, run, `{"vmid":1000000009,"mode":"new"}`); code != 409 || !strings.Contains(out, "already being restored") {
+		t.Fatalf("second restore of the same VM: %d %s", code, out)
+	}
+	if r, err := e.store.ClaimRun(e.ctx, hv); err != nil || r == nil || r.ID != inPlace.ID {
+		t.Fatalf("claim restore: %v %+v", err, r)
+	}
+	if err := e.store.FinishRun(e.ctx, hv, inPlace.ID, api.RunResult{Status: api.StatusSuccess}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A second VM next to the original, on the host of the backup, with the
+	// name the portal chose.
+	code, body = restore(op, run, `{"vmid":1000000009,"mode":"new","name":"lab (refăcută 2026-11-15 12-30-05)"}`)
+	if code != 202 {
+		t.Fatalf("restore as new: %d %s", code, body)
+	}
+	r := queued(body)
+	if o := options(r); r.AgentID != hv || o.VMID != 1000000009 || o.NewVMID != -1 || o.Overwrite || o.Start ||
+		o.Name != "lab (refăcută 2026-11-15 12-30-05)" || r.SnapshotID != strings.Repeat("c3", 32) {
+		t.Fatalf("as new: agent %d %+v", r.AgentID, o)
+	}
+	// While it is queued, in place is refused: the host is busy.
+	if code, out := restore(op, run, `{"vmid":1000000009,"mode":"replace"}`); code != 409 {
+		t.Fatalf("in place while busy: %d %s", code, out)
 	}
 
 	refused := []struct {
@@ -236,12 +255,30 @@ func TestAPIVirtualMachineRestore(t *testing.T) {
 		{"bad name", op, run, `{"vmid":1000000009,"mode":"new","name":"a/b"}`, 409},
 		{"unknown agent", op, run, `{"vmid":1000000009,"mode":"new","agent_id":999999}`, 400},
 		{"failed backup", op, failed, `{"vmid":1000000009,"mode":"new"}`, 409},
+		{"name of a VM on the host", op, run, `{"vmid":1000000009,"mode":"new","name":"LAB"}`, 409},
 	}
 	for _, x := range refused {
 		if code, out := restore(x.token, x.run, x.req); code != x.code {
 			t.Errorf("%s: %d %s", x.name, code, out)
 		}
 	}
+	// A host that is not connected now gets nothing queued.
+	if _, err := e.pool.Exec(e.ctx, `UPDATE agents SET last_seen_at = now() - interval '1 hour' WHERE id=$1`, hv); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := restore(op, run, `{"vmid":1000000009,"mode":"new","name":"other"}`); code != 409 || !strings.Contains(out, "not connected") {
+		t.Errorf("offline host: %d %s", code, out)
+	}
+	// In place over a VM that is gone from the host is refused (it would be
+	// recreated by name, perhaps over another VM).
+	if err := e.store.TouchAgent(e.ctx, hv, api.PollRequest{Hostname: "HV9", OS: "Windows Server 2025", Version: "test",
+		Hypervisor: json.RawMessage(`{"platform":"hyperv","node":"HV9","guests":[],"storage":["D:\\VMs"]}`)}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := restore(op, run, `{"vmid":1000000009,"mode":"replace"}`); code != 409 || !strings.Contains(out, "not on HV9 any more") {
+		t.Errorf("in place over a gone VM: %d %s", code, out)
+	}
+
 	// A run that does not exist.
 	if code, out := apiJSONCall(t, e, op, "POST", "/api/v1/runs/999999/vm-restore", `{"vmid":1,"mode":"new"}`); code != 404 {
 		t.Errorf("missing run: %d %s", code, out)

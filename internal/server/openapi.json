@@ -2508,7 +2508,7 @@
       "post": {
         "operationId": "restoreRunVM",
         "summary": "Queue a restore of a virtual machine from a VM backup",
-        "description": "Unirea fork. Returns the created run (kind vm-restore). mode \"new\" creates a second VM next to the original (Hyper-V: new name and MAC addresses; Proxmox VE: the next free ID); \"replace\" puts the backup in place of the original, which is turned off first (Hyper-V keeps the old disks renamed). The VM must be in the guests of the run, and the receiving agent a hypervisor host of the same platform.",
+        "description": "Unirea fork. Returns the created run (kind vm-restore). mode \"new\" creates a second VM next to the original (Hyper-V: new MAC addresses; name, if given, must not be taken on the host; Proxmox VE: the next free ID); \"replace\" puts the backup in place of the original, which is turned off first and keeps its old disks renamed: only on a single Hyper-V host, only while that very VM is still on it, and only when the host has nothing else queued or running. The host must be connected now; a VM already being restored on it is refused.",
         "x-minimum-role": "restore",
         "responses": {
           "400": {
