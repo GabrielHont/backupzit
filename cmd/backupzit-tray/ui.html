@@ -26,6 +26,11 @@ header { display: flex; align-items: center; gap: 12px; padding: 16px 24px; back
 .brand span { font-weight: 450; }
 .host { color: var(--muted); font-size: 12.5px; }
 .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.langs { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-left: 14px; }
+.langs button { background: transparent; color: var(--muted); border-radius: 0; padding: 4px 9px; font-size: 12px; font-weight: 600; }
+.langs button[aria-pressed="true"] { background: var(--brand); color: #fff; }
+.langs button:hover { filter: none; color: var(--text); }
+.langs button[aria-pressed="true"]:hover { color: #fff; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--off); }
 .dot.on { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
 main { flex: 1; overflow: auto; padding: 20px 24px 8px; }
@@ -77,30 +82,31 @@ footer .sp { flex: 1; }
 <header>
   <div class="logo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#f7f3ea" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="7" height="10" rx="1"/><rect x="14" y="11" width="7" height="10" rx="1"/><path d="M6 11V9C3 9 3 5 8 5C8 1 16 1 16 5C21 5 21 9 18 9V11"/></svg></div>
   <div><div class="brand">Unirea <span>Backup Agent</span></div><div class="host" id="host">&nbsp;</div></div>
-  <div class="conn"><span class="dot" id="dot"></span><span id="conn">Se conectează…</span></div>
+  <div class="conn"><span class="dot" id="dot"></span><span id="conn" data-t="connecting">Se conectează…</span>
+    <div class="langs" role="group" aria-label="Limbă / Language"><button type="button" data-lang="ro" aria-pressed="true" title="Română">RO</button><button type="button" data-lang="en" aria-pressed="false" title="English">EN</button></div></div>
 </header>
 <main>
   <section class="hero s-offline" id="hero">
     <div class="badge" id="badge"></div>
     <div class="grow">
-      <h1 id="headline">Se încarcă…</h1>
+      <h1 id="headline" data-t="loading">Se încarcă…</h1>
       <p id="detail"></p>
       <div class="bar"><i id="bar"></i></div>
     </div>
   </section>
   <div class="facts">
-    <div class="fact"><b>Ultimul backup</b><span id="last">—</span></div>
-    <div class="fact"><b>Următorul backup</b><span id="next">—</span></div>
-    <div class="fact"><b>Ultima activitate</b><span id="activity">—</span></div>
+    <div class="fact"><b data-t="lastBackup">Ultimul backup</b><span id="last">—</span></div>
+    <div class="fact"><b data-t="nextBackup">Următorul backup</b><span id="next">—</span></div>
+    <div class="fact"><b data-t="lastActivity">Ultima activitate</b><span id="activity">—</span></div>
   </div>
-  <h2>Backupurile acestui calculator</h2>
-  <div class="jobs" id="jobs"><div class="empty">Se încarcă…</div></div>
+  <h2 data-t="jobsTitle">Backupurile acestui calculator</h2>
+  <div class="jobs" id="jobs"><div class="empty" data-t="loading">Se încarcă…</div></div>
   <div class="err" id="err"></div>
 </main>
 <footer>
   <span id="ver"></span><span class="sp"></span>
   <span id="server"></span>
-  <button class="ghost" id="console">Deschide consola</button>
+  <button class="ghost" id="console" data-t="openConsole">Deschide consola</button>
 </footer>
 <script>
 const icons = {
@@ -112,10 +118,34 @@ const icons = {
 };
 icons.idle = icons.ok;
 const $ = id => document.getElementById(id);
+const TEXT = {
+  ro: { connecting: 'Se conectează…', loading: 'Se încarcă…', lastBackup: 'Ultimul backup', nextBackup: 'Următorul backup',
+    lastActivity: 'Ultima activitate', jobsTitle: 'Backupurile acestui calculator', openConsole: 'Deschide consola',
+    thisComputer: 'Acest calculator: ', connected: 'Conectat la serverul de backup', unreachable: 'Fără legătură cu serverul',
+    noService: 'Programul nu rulează', version: 'Versiunea ', serviceDown: 'Programul de backup nu rulează.',
+    noJobs: 'Calculatorul nu are încă backup programat. Îl programați din portalul Unirea Cloud.', loadingJobs: 'Se încarcă backupurile…',
+    running: 'în curs', last: 'Ultimul', next: 'Următorul', runningBtn: 'În curs…', backUp: 'Fă backup acum', starting: 'Pornește…' },
+  en: { connecting: 'Connecting…', loading: 'Loading…', lastBackup: 'Last backup', nextBackup: 'Next backup',
+    lastActivity: 'Last activity', jobsTitle: 'Backup jobs of this computer', openConsole: 'Open console',
+    thisComputer: 'This computer: ', connected: 'Connected to the backup server', unreachable: 'Backup server not reachable',
+    noService: 'Agent service not running', version: 'Version ', serviceDown: 'The agent service is not running.',
+    noJobs: 'No backup jobs for this computer yet. Create one in the Unirea Cloud portal.', loadingJobs: 'Loading backup jobs…',
+    running: 'running', last: 'Last', next: 'Next', runningBtn: 'Running…', backUp: 'Back up now', starting: 'Starting…' }
+};
+let lang = 'ro', lastSummary = null;
+const T = k => TEXT[lang][k];
+function setLangUI(l) {
+  lang = l === 'en' ? 'en' : 'ro';
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-t]').forEach(e => { e.textContent = T(e.dataset.t); });
+  document.querySelectorAll('.langs button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
+}
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let busy = {};
 
 function render(s) {
+  lastSummary = s;
+  if (s.lang && s.lang !== lang) setLangUI(s.lang);
   const st = s.status || {};
   $('hero').className = 'hero s-' + s.state;
   $('badge').innerHTML = icons[s.state] || icons.ok;
@@ -125,21 +155,21 @@ function render(s) {
   $('last').textContent = s.last_text || '—';
   $('next').textContent = s.next_text || '—';
   $('activity').textContent = s.activity_text || '—';
-  $('host').textContent = st.hostname ? 'Acest calculator: ' + st.hostname : '';
+  $('host').textContent = st.hostname ? T('thisComputer') + st.hostname : '';
   $('dot').className = 'dot' + (st.connected ? ' on' : '');
-  $('conn').textContent = st.connected ? 'Conectat la serverul de backup' : (s.status ? 'Fără legătură cu serverul' : 'Programul nu rulează');
+  $('conn').textContent = st.connected ? T('connected') : (s.status ? T('unreachable') : T('noService'));
   $('server').textContent = st.server_url || '';
   $('console').disabled = !st.server_url;
-  $('ver').textContent = st.version ? 'Versiunea ' + st.version : '';
+  $('ver').textContent = st.version ? T('version') + st.version : '';
   const jobs = s.jobs || [];
-  if (!s.status) { $('jobs').innerHTML = '<div class="empty">Programul de backup nu rulează.</div>'; return; }
-  if (!jobs.length) { $('jobs').innerHTML = '<div class="empty">' + (st.jobs_at ? 'Calculatorul nu are încă backup programat. Îl programați din portalul Unirea Cloud.' : 'Se încarcă backupurile…') + '</div>'; return; }
+  if (!s.status) { $('jobs').innerHTML = '<div class="empty">' + T('serviceDown') + '</div>'; return; }
+  if (!jobs.length) { $('jobs').innerHTML = '<div class="empty">' + (st.jobs_at ? T('noJobs') : T('loadingJobs')) + '</div>'; return; }
   $('jobs').innerHTML = jobs.map(j => {
-    const last = j.running ? '<span class="pill running">în curs</span>' :
+    const last = j.running ? '<span class="pill running">' + T('running') + '</span>' :
       (j.last_status ? '<span class="pill ' + esc(j.last_status) + '">' + esc(j.status_text) + '</span> ' : '') + esc(j.last_text);
     return '<div class="job"><div><div class="name" title="' + esc(j.last_message) + '">' + esc(j.name) + '</div><div class="kind">' + esc(j.kind_text) + ' · ' + esc(j.schedule_text) + '</div></div>' +
-      '<div class="col"><b>Ultimul</b>' + last + '</div><div class="col"><b>Următorul</b>' + esc(j.next_text) + '</div>' +
-      '<div><button data-job="' + j.id + '"' + (j.running || busy[j.id] ? ' disabled' : '') + '>' + (j.running ? 'În curs…' : 'Fă backup acum') + '</button></div></div>';
+      '<div class="col"><b>' + T('last') + '</b>' + last + '</div><div class="col"><b>' + T('next') + '</b>' + esc(j.next_text) + '</div>' +
+      '<div><button data-job="' + j.id + '"' + (j.running || busy[j.id] ? ' disabled' : '') + '>' + (j.running ? T('runningBtn') : T('backUp')) + '</button></div></div>';
   }).join('');
 }
 
@@ -148,12 +178,19 @@ document.addEventListener('click', async e => {
   const b = e.target.closest('button[data-job]');
   if (b) {
     const id = Number(b.dataset.job);
-    busy[id] = true; b.disabled = true; b.textContent = 'Pornește…'; $('err').textContent = '';
+    busy[id] = true; b.disabled = true; b.textContent = T('starting'); $('err').textContent = '';
     const err = await window.bzRun(id);
     if (err) { $('err').textContent = err; }
     setTimeout(() => { delete busy[id]; }, 8000);
   }
   if (e.target.id === 'console') window.bzConsole();
+  const lb = e.target.closest('.langs button');
+  if (lb && lb.dataset.lang !== lang) {
+    // Labels switch at once; the status texts come back from the tray.
+    setLangUI(lb.dataset.lang);
+    if (lastSummary) render(Object.assign({}, lastSummary, { lang }));
+    if (window.bzSetLang) window.bzSetLang(lang);
+  }
 });
 document.addEventListener('contextmenu', e => e.preventDefault());
 (async () => { try { render(await window.bzStatus()); } catch (e) {} })();

@@ -19,7 +19,7 @@ var uiHTML string
 //go:embed icons/app.ico
 var appIcon []byte
 
-// statusWindow is the "Open BackupZit Agent" window. It is rendered with
+// statusWindow is the "Open Unirea Backup Agent" window. It is rendered with
 // WebView2 (present on Windows 10/11); without it the console opens in the
 // browser instead.
 type statusWindow struct {
@@ -86,6 +86,9 @@ func (s *statusWindow) run(t *tray, ready chan<- bool) {
 	_ = w.Bind("bzStatus", func() Summary { return t.summary() })
 	_ = w.Bind("bzRun", func(id float64) string { return t.runJob(int64(id)) })
 	_ = w.Bind("bzConsole", func() { t.openConsole() })
+	// The window switches its own labels at once; the status texts follow
+	// with the next update (setLang refreshes and pushes it).
+	_ = w.Bind("bzSetLang", func(l string) { go t.setLang(l) })
 	_ = w.Bind("bzVersion", func() string { return version })
 	w.SetHtml(uiHTML)
 	s.mu.Lock()

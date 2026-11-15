@@ -41,6 +41,7 @@ type tray struct {
 	mu   sync.Mutex
 	sum  Summary
 	icon string
+	lang string
 
 	status   *systray.MenuItem
 	detail   *systray.MenuItem
@@ -49,6 +50,9 @@ type tray struct {
 	jobItems []*systray.MenuItem
 	jobIDs   []int64
 	console  *systray.MenuItem
+	language *systray.MenuItem
+	langRO   *systray.MenuItem
+	langEN   *systray.MenuItem
 	hide     *systray.MenuItem
 	win      *statusWindow
 }
@@ -67,7 +71,7 @@ func main() {
 	}
 	defer windows.CloseHandle(m)
 
-	t := &tray{win: newStatusWindow()}
+	t := &tray{win: newStatusWindow(), lang: loadLang()}
 	systray.Run(func() { t.ready(showEvent, show) }, func() {})
 }
 
@@ -89,8 +93,8 @@ func (t *tray) ready(showEvent windows.Handle, show bool) {
 	t.detail = systray.AddMenuItem("", "")
 	t.detail.Disable()
 	systray.AddSeparator()
-	t.open = systray.AddMenuItem("Deschide Unirea Backup Agent", "Arată starea backupului acestui calculator")
-	t.backup = systray.AddMenuItem("Fă backup acum", "Pornește acum un backup")
+	t.open = systray.AddMenuItem("", "")
+	t.backup = systray.AddMenuItem("", "")
 	for i := 0; i < maxJobItems; i++ {
 		it := t.backup.AddSubMenuItem("", "")
 		it.Hide()
@@ -107,9 +111,14 @@ func (t *tray) ready(showEvent windows.Handle, show bool) {
 			}
 		}(i, it)
 	}
-	t.console = systray.AddMenuItem("Deschide consola de backup", "Deschide consola de backup în browser")
+	t.console = systray.AddMenuItem("", "")
 	systray.AddSeparator()
-	t.hide = systray.AddMenuItem("Ascunde iconița", "Iconița revine la următoarea conectare; backupul continuă în fundal")
+	// Named in both languages so anyone finds it.
+	t.language = systray.AddMenuItem("Limbă / Language", "")
+	t.langRO = t.language.AddSubMenuItemCheckbox("Română", "", t.lang == langRO)
+	t.langEN = t.language.AddSubMenuItemCheckbox("English", "", t.lang == langEN)
+	t.hide = systray.AddMenuItem("", "")
+	t.menuTexts()
 
 	systray.SetOnTapped(func() { t.win.show(t) })
 	go func() {
@@ -119,6 +128,10 @@ func (t *tray) ready(showEvent windows.Handle, show bool) {
 				t.win.show(t)
 			case <-t.console.ClickedCh:
 				t.openConsole()
+			case <-t.langRO.ClickedCh:
+				t.setLang(langRO)
+			case <-t.langEN.ClickedCh:
+				t.setLang(langEN)
 			case <-t.hide.ClickedCh:
 				t.win.close()
 				systray.Quit()
@@ -141,6 +154,41 @@ func (t *tray) ready(showEvent windows.Handle, show bool) {
 	}
 }
 
+// menuTexts sets the fixed menu texts in the chosen language.
+func (t *tray) menuTexts() {
+	t.mu.Lock()
+	l := t.lang
+	t.mu.Unlock()
+	t.open.SetTitle(tr(l, "Deschide Unirea Backup Agent", "Open Unirea Backup Agent"))
+	t.open.SetTooltip(tr(l, "Arată starea backupului acestui calculator", "Show the status of this computer's backups"))
+	t.backup.SetTitle(tr(l, "Fă backup acum", "Back up now"))
+	t.backup.SetTooltip(tr(l, "Pornește acum un backup", "Start a backup job now"))
+	t.console.SetTitle(tr(l, "Deschide consola de backup", "Open the backup console"))
+	t.console.SetTooltip(tr(l, "Deschide consola de backup în browser", "Open the backup console in the browser"))
+	t.hide.SetTitle(tr(l, "Ascunde iconița", "Hide this icon"))
+	t.hide.SetTooltip(tr(l, "Iconița revine la următoarea conectare; backupul continuă în fundal",
+		"The icon returns at the next sign-in; backups continue in the background"))
+	if l == langEN {
+		t.langRO.Uncheck()
+		t.langEN.Check()
+	} else {
+		t.langEN.Uncheck()
+		t.langRO.Check()
+	}
+}
+
+// setLang switches the language of the menu and the window and keeps the
+// choice for this Windows user.
+func (t *tray) setLang(l string) {
+	l = normLang(l)
+	t.mu.Lock()
+	t.lang = l
+	t.mu.Unlock()
+	saveLang(l)
+	t.menuTexts()
+	t.win.update(t.refresh())
+}
+
 // refresh asks the agent for its status and updates icon and menu.
 func (t *tray) refresh() Summary {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -150,10 +198,10 @@ func (t *tray) refresh() Summary {
 	if err == nil {
 		st = resp.Status
 	}
-	sum := summarize(st, err, time.Now())
-
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	sum := summarize(st, err, time.Now(), t.lang)
+	l := sum.Lang
 	t.sum = sum
 	if sum.State != t.icon {
 		systray.SetIcon(stateIcon[sum.State])
@@ -166,7 +214,7 @@ func (t *tray) refresh() Summary {
 	}
 	t.status.SetTitle(head)
 	if sum.Status != nil {
-		t.detail.SetTitle("Ultimul: " + sum.LastText + "   Următorul: " + sum.NextText)
+		t.detail.SetTitle(tr(l, "Ultimul: ", "Last: ") + sum.LastText + tr(l, "   Următorul: ", "   Next: ") + sum.NextText)
 		t.detail.Show()
 	} else {
 		t.detail.Hide()
@@ -178,10 +226,10 @@ func (t *tray) refresh() Summary {
 		}
 		title := j.Name
 		if j.Running {
-			title += "  (în curs)"
+			title += tr(l, "  (în curs)", "  (running)")
 		}
 		t.jobItems[n].SetTitle(title)
-		t.jobItems[n].SetTooltip(j.KindText + " · ultimul " + j.LastText + " · următorul " + j.NextText)
+		t.jobItems[n].SetTooltip(j.KindText + tr(l, " · ultimul ", " · last ") + j.LastText + tr(l, " · următorul ", " · next ") + j.NextText)
 		if j.Running {
 			t.jobItems[n].Disable()
 		} else {
@@ -231,8 +279,9 @@ func (t *tray) runJob(id int64) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	if _, err := localipc.Call(ctx, localipc.Request{Cmd: localipc.CmdRun, JobID: id}); err != nil {
-		msg := "Backupul nu a pornit: " + strings.TrimSpace(err.Error())
-		systray.SetTooltip(Summary{Headline: msg}.tooltip())
+		l := t.summary().Lang
+		msg := tr(l, "Backupul nu a pornit: ", "The backup did not start: ") + strings.TrimSpace(err.Error())
+		systray.SetTooltip(Summary{Lang: l, Headline: msg}.tooltip())
 		return msg
 	}
 	go func() {
