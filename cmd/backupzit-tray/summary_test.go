@@ -12,7 +12,7 @@ import (
 // A running service that is not enrolled is not reported as "not running".
 func TestSummaryNotEnrolled(t *testing.T) {
 	st := &localipc.Status{ServerURL: "https://backup:443", LastError: "certificate mismatch"}
-	if s := summarize(st, nil, time.Now(), langRO); s.Headline != "Calculatorul nu e încă înscris" || !strings.Contains(s.Detail, "certificate mismatch") {
+	if s := summarize(st, nil, time.Now(), langRO); s.Headline != "Calculatorul nu e încă înscris" || !strings.Contains(s.Detail, "cod nou") {
 		t.Fatalf("%+v", s)
 	}
 	if s := summarize(st, nil, time.Now(), langEN); s.Headline != "This computer is not enrolled yet" {
@@ -89,5 +89,26 @@ func TestLangFile(t *testing.T) {
 	saveLang("xx")
 	if l := loadLang(); l != langRO {
 		t.Fatalf("unknown %q", l)
+	}
+}
+
+// Customers do not see the backup server's address.
+func TestNoServerAddressShown(t *testing.T) {
+	last := time.Now().Add(-time.Hour)
+	for _, st := range []*localipc.Status{
+		{ServerURL: "https://backup.example:18951", LastError: "dial tcp backup.example:18951: refused"},
+		{ServerURL: "https://backup.example:18951", Enrolled: true, LastError: "dial tcp backup.example:18951: refused"},
+		{ServerURL: "https://backup.example:18951", Enrolled: true, LastContact: &last, LastError: "dial tcp backup.example:18951: refused"},
+	} {
+		for _, l := range []string{langRO, langEN} {
+			s := summarize(st, nil, time.Now(), l)
+			if strings.Contains(s.Headline+s.Detail, "backup.example") {
+				t.Errorf("%s: address shown: %q / %q", l, s.Headline, s.Detail)
+			}
+			w := s.forWindow()
+			if w.Status.ServerURL != "" || w.Status.LastError != "" || s.Status.ServerURL == "" {
+				t.Errorf("forWindow: %+v (original %+v)", w.Status, s.Status)
+			}
+		}
 	}
 }

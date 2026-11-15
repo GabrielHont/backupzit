@@ -49,7 +49,6 @@ type tray struct {
 	backup   *systray.MenuItem
 	jobItems []*systray.MenuItem
 	jobIDs   []int64
-	console  *systray.MenuItem
 	language *systray.MenuItem
 	langRO   *systray.MenuItem
 	langEN   *systray.MenuItem
@@ -111,7 +110,6 @@ func (t *tray) ready(showEvent windows.Handle, show bool) {
 			}
 		}(i, it)
 	}
-	t.console = systray.AddMenuItem("", "")
 	systray.AddSeparator()
 	// Named in both languages so anyone finds it.
 	t.language = systray.AddMenuItem("Limbă / Language", "")
@@ -126,8 +124,6 @@ func (t *tray) ready(showEvent windows.Handle, show bool) {
 			select {
 			case <-t.open.ClickedCh:
 				t.win.show(t)
-			case <-t.console.ClickedCh:
-				t.openConsole()
 			case <-t.langRO.ClickedCh:
 				t.setLang(langRO)
 			case <-t.langEN.ClickedCh:
@@ -163,8 +159,6 @@ func (t *tray) menuTexts() {
 	t.open.SetTooltip(tr(l, "Arată starea backupului acestui calculator", "Show the status of this computer's backups"))
 	t.backup.SetTitle(tr(l, "Fă backup acum", "Back up now"))
 	t.backup.SetTooltip(tr(l, "Pornește acum un backup", "Start a backup job now"))
-	t.console.SetTitle(tr(l, "Deschide consola de backup", "Open the backup console"))
-	t.console.SetTooltip(tr(l, "Deschide consola de backup în browser", "Open the backup console in the browser"))
 	t.hide.SetTitle(tr(l, "Ascunde iconița", "Hide this icon"))
 	t.hide.SetTooltip(tr(l, "Iconița revine la următoarea conectare; backupul continuă în fundal",
 		"The icon returns at the next sign-in; backups continue in the background"))
@@ -248,11 +242,6 @@ func (t *tray) refresh() Summary {
 	} else {
 		t.backup.Enable()
 	}
-	if sum.Status == nil || sum.Status.ServerURL == "" {
-		t.console.Disable()
-	} else {
-		t.console.Enable()
-	}
 	return sum
 }
 
@@ -291,17 +280,12 @@ func (t *tray) runJob(id int64) string {
 	return ""
 }
 
-func (t *tray) openConsole() {
+// showMessage shows the status in a plain message box, for computers
+// without the WebView2 runtime the window needs.
+func (t *tray) showMessage() {
 	s := t.summary()
-	if s.Status == nil || s.Status.ServerURL == "" {
-		return
-	}
-	openURL(s.Status.ServerURL)
-}
-
-func openURL(u string) {
-	if !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
-		return
-	}
-	_ = windows.ShellExecute(0, windows.StringToUTF16Ptr("open"), windows.StringToUTF16Ptr(u), nil, nil, windows.SW_SHOWNORMAL)
+	text, _ := windows.UTF16PtrFromString(s.Headline + "\n\n" + s.Detail)
+	title, _ := windows.UTF16PtrFromString("Unirea Backup Agent")
+	const mbIconInformation = 0x40
+	_, _ = windows.MessageBox(0, text, title, mbIconInformation)
 }

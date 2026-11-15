@@ -61,7 +61,7 @@ func (s *statusWindow) show(t *tray) {
 	ready := make(chan bool)
 	go s.run(t, ready)
 	if !<-ready {
-		t.openConsole() // no WebView2 runtime
+		t.showMessage() // no WebView2 runtime
 	}
 }
 
@@ -83,9 +83,8 @@ func (s *statusWindow) run(t *tray, ready chan<- bool) {
 	hwnd := uintptr(w.Window())
 	setWindowIcon(hwnd)
 	w.SetSize(720, 480, webview2.HintMin)
-	_ = w.Bind("bzStatus", func() Summary { return t.summary() })
+	_ = w.Bind("bzStatus", func() Summary { return t.summary().forWindow() })
 	_ = w.Bind("bzRun", func(id float64) string { return t.runJob(int64(id)) })
-	_ = w.Bind("bzConsole", func() { t.openConsole() })
 	// The window switches its own labels at once; the status texts follow
 	// with the next update (setLang refreshes and pushes it).
 	_ = w.Bind("bzSetLang", func(l string) { go t.setLang(l) })
@@ -110,7 +109,7 @@ func (s *statusWindow) update(sum Summary) {
 	if w == nil {
 		return
 	}
-	b, _ := json.Marshal(sum)
+	b, _ := json.Marshal(sum.forWindow())
 	w.Dispatch(func() { w.Eval("window.bzUpdate && window.bzUpdate(" + string(b) + ")") })
 }
 

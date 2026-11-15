@@ -105,8 +105,6 @@ footer .sp { flex: 1; }
 </main>
 <footer>
   <span id="ver"></span><span class="sp"></span>
-  <span id="server"></span>
-  <button class="ghost" id="console" data-t="openConsole">Deschide consola</button>
 </footer>
 <script>
 const icons = {
@@ -120,13 +118,13 @@ icons.idle = icons.ok;
 const $ = id => document.getElementById(id);
 const TEXT = {
   ro: { connecting: 'Se conectează…', loading: 'Se încarcă…', lastBackup: 'Ultimul backup', nextBackup: 'Următorul backup',
-    lastActivity: 'Ultima activitate', jobsTitle: 'Backupurile acestui calculator', openConsole: 'Deschide consola',
+    lastActivity: 'Ultima activitate', jobsTitle: 'Backupurile acestui calculator',
     thisComputer: 'Acest calculator: ', connected: 'Conectat la serverul de backup', unreachable: 'Fără legătură cu serverul',
     noService: 'Programul nu rulează', version: 'Versiunea ', serviceDown: 'Programul de backup nu rulează.',
     noJobs: 'Calculatorul nu are încă backup programat. Îl programați din portalul Unirea Cloud.', loadingJobs: 'Se încarcă backupurile…',
     running: 'în curs', last: 'Ultimul', next: 'Următorul', runningBtn: 'În curs…', backUp: 'Fă backup acum', starting: 'Pornește…' },
   en: { connecting: 'Connecting…', loading: 'Loading…', lastBackup: 'Last backup', nextBackup: 'Next backup',
-    lastActivity: 'Last activity', jobsTitle: 'Backup jobs of this computer', openConsole: 'Open console',
+    lastActivity: 'Last activity', jobsTitle: 'Backup jobs of this computer',
     thisComputer: 'This computer: ', connected: 'Connected to the backup server', unreachable: 'Backup server not reachable',
     noService: 'Agent service not running', version: 'Version ', serviceDown: 'The agent service is not running.',
     noJobs: 'No backup jobs for this computer yet. Create one in the Unirea Cloud portal.', loadingJobs: 'Loading backup jobs…',
@@ -158,8 +156,6 @@ function render(s) {
   $('host').textContent = st.hostname ? T('thisComputer') + st.hostname : '';
   $('dot').className = 'dot' + (st.connected ? ' on' : '');
   $('conn').textContent = st.connected ? T('connected') : (s.status ? T('unreachable') : T('noService'));
-  $('server').textContent = st.server_url || '';
-  $('console').disabled = !st.server_url;
   $('ver').textContent = st.version ? T('version') + st.version : '';
   const jobs = s.jobs || [];
   if (!s.status) { $('jobs').innerHTML = '<div class="empty">' + T('serviceDown') + '</div>'; return; }
@@ -183,7 +179,6 @@ document.addEventListener('click', async e => {
     if (err) { $('err').textContent = err; }
     setTimeout(() => { delete busy[id]; }, 8000);
   }
-  if (e.target.id === 'console') window.bzConsole();
   const lb = e.target.closest('.langs button');
   if (lb && lb.dataset.lang !== lang) {
     // Labels switch at once; the status texts come back from the tray.

@@ -227,10 +227,11 @@ func summarize(st *localipc.Status, callErr error, now time.Time, lang string) S
 	}
 	if !st.Enrolled {
 		s.State, s.Headline = "offline", L("Calculatorul nu e încă înscris", "This computer is not enrolled yet")
+		// The customer does not see the server address or raw errors.
 		switch {
-		case st.ServerURL != "" && st.LastError != "":
-			s.Detail = L("Înscrierea la "+st.ServerURL+" nu a reușit: "+st.LastError+". Luați un cod nou din portalul Unirea Cloud și rulați din nou programul de instalare.",
-				"Enrolling with "+st.ServerURL+" failed: "+st.LastError+". Get a new enrollment code in the Unirea Cloud portal and run the installer again.")
+		case st.LastError != "":
+			s.Detail = L("Înscrierea nu a reușit. Luați un cod nou din portalul Unirea Cloud și rulați din nou programul de instalare.",
+				"Enrolling failed. Get a new enrollment code in the Unirea Cloud portal and run the installer again.")
 		default:
 			s.Detail = L("Rulați din nou programul de instalare și lipiți codul de înscriere din portalul Unirea Cloud.",
 				"Run the installer again and paste the enrollment code from the Unirea Cloud portal.")
@@ -306,7 +307,8 @@ func summarize(st *localipc.Status, callErr error, now time.Time, lang string) S
 		}
 	case !st.Connected && st.LastContact == nil:
 		s.State, s.Headline = "offline", L("Fără legătură cu serverul de backup", "Not connected to the backup server")
-		s.Detail = strings.TrimSpace(L("Încerc să ajung la ", "Trying to reach ") + st.ServerURL + ". " + st.LastError)
+		s.Detail = L("Verificați legătura la internet. Backupurile programate pornesc când revine legătura.",
+			"Check the internet connection. Scheduled backups start once it is back.")
 	case len(st.Jobs) == 0 && st.JobsAt != nil:
 		s.State, s.Headline = "idle", L("Calculatorul nu are încă backup programat", "No backup jobs for this computer")
 		s.Detail = L("Programați backupul pentru "+st.Hostname+" din portalul Unirea Cloud.",
@@ -339,6 +341,19 @@ func summarize(st *localipc.Status, callErr error, now time.Time, lang string) S
 		s.Detail = L("Fără legătură cu serverul de backup din "+w(*st.LastContact)+". Backupurile programate pornesc când revine legătura. ",
 			"No connection to the backup server since "+w(*st.LastContact)+". Scheduled backups start once it is back. ") + s.Detail
 	}
+	return s
+}
+
+// forWindow is the summary as sent to the status window: without the
+// backup server's address and raw connection errors, which customers do
+// not need to see.
+func (s Summary) forWindow() Summary {
+	if s.Status != nil {
+		st := *s.Status
+		st.ServerURL, st.LastError = "", ""
+		s.Status = &st
+	}
+	s.Error = ""
 	return s
 }
 
