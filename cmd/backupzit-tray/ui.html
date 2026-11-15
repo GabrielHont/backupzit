@@ -5,15 +5,15 @@
 <title>Unirea Backup Agent</title>
 <style>
 :root {
-  --bg: #f4f5fb; --panel: #ffffff; --text: #111827; --muted: #6b7280; --line: #e5e7eb;
-  --brand: #4f46e5; --brand-2: #6366f1; --brand-soft: #eef2ff;
+  --bg: #f7f3ea; --panel: #fffdf8; --text: #302b24; --muted: #6f665a; --line: #e6dfd1;
+  --brand: #a64b36; --brand-2: #8a3d2b; --brand-soft: #f3e4dd;
   --ok: #16a34a; --ok-soft: #dcfce7; --run: #2563eb; --run-soft: #dbeafe;
-  --warn: #d97706; --warn-soft: #fef3c7; --err: #dc2626; --err-soft: #fee2e2; --off: #6b7280; --off-soft: #f3f4f6;
+  --warn: #d97706; --warn-soft: #fef3c7; --err: #dc2626; --err-soft: #fee2e2; --off: #7a7266; --off-soft: #efe9de;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0b1020; --panel: #121a2e; --text: #e5e7eb; --muted: #94a3b8; --line: #1f2a44;
-    --brand-soft: #1e1b4b; --ok-soft: #052e16; --run-soft: #0c1e4a; --warn-soft: #3a2506; --err-soft: #3b0d0d; --off-soft: #1f2937;
+    --bg: #1b1814; --panel: #24201b; --text: #ece6da; --muted: #a69c8d; --line: #3a332b;
+    --brand-2: #e0a08c; --brand-soft: #3b231b; --ok-soft: #052e16; --run-soft: #0c1e4a; --warn-soft: #3a2506; --err-soft: #3b0d0d; --off-soft: #1f2937;
   }
 }
 * { box-sizing: border-box; }
@@ -21,9 +21,9 @@ html, body { margin: 0; height: 100%; }
 body { font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text);
   -webkit-user-select: none; user-select: none; overflow: hidden; display: flex; flex-direction: column; }
 header { display: flex; align-items: center; gap: 12px; padding: 16px 24px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.logo { width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(135deg, var(--brand-2), var(--brand)); display: grid; place-items: center; }
+.logo { width: 34px; height: 34px; border-radius: 8px; background: var(--brand); display: grid; place-items: center; }
 .brand { font-weight: 700; font-size: 17px; letter-spacing: -.01em; }
-.brand span { color: var(--brand-2); }
+.brand span { font-weight: 450; }
 .host { color: var(--muted); font-size: 12.5px; }
 .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--off); }
@@ -75,8 +75,8 @@ footer .sp { flex: 1; }
 </head>
 <body>
 <header>
-  <div class="logo"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2"><ellipse cx="12" cy="6" rx="7" ry="2.6"/><path d="M5 6v12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6"/><path d="M5 12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6"/></svg></div>
-  <div><div class="brand">Backup<span>Zit</span> Agent</div><div class="host" id="host">&nbsp;</div></div>
+  <div class="logo"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#f7f3ea" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="7" height="10" rx="1"/><rect x="14" y="11" width="7" height="10" rx="1"/><path d="M6 11V9C3 9 3 5 8 5C8 1 16 1 16 5C21 5 21 9 18 9V11"/></svg></div>
+  <div><div class="brand">Unirea <span>Backup Agent</span></div><div class="host" id="host">&nbsp;</div></div>
   <div class="conn"><span class="dot" id="dot"></span><span id="conn">Connecting…</span></div>
 </header>
 <main>
