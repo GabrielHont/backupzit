@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/max-zit/backupzit/internal/api"
 	"github.com/max-zit/backupzit/internal/pve"
 )
@@ -205,12 +206,40 @@ func (s *Store) QueueVMRestore(ctx context.Context, backupRunID, agentID int64, 
 		return 0, errors.New("the name may not contain spaces or : , = and has at most 63 characters")
 	}
 	opts, _ := json.Marshal(o)
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // a no-op after Commit
+	// Proxmox VE hands out the next free VM ID per cluster without reserving
+	// it: two restores on two nodes at once could take the same ID. One at a
+	// time, whether queued from the REST API or the web UI.
+	if a.Platform() == "proxmox" {
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, pveRestoreLock); err != nil {
+			return 0, err
+		}
+		var busy string
+		err := tx.QueryRow(ctx, `SELECT a.hostname FROM runs r JOIN agents a ON a.id = r.agent_id
+			WHERE r.kind='vm-restore' AND r.status IN ('queued','running','stopping')
+			AND a.hypervisor IS NOT NULL AND coalesce(a.hypervisor->>'platform', 'proxmox') = 'proxmox' LIMIT 1`).Scan(&busy)
+		if err == nil {
+			return 0, fmt.Errorf("a VM is already being restored on %s; one Proxmox VE restore at a time", busy)
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return 0, err
+		}
+	}
 	var id int64
-	err = s.db.QueryRow(ctx, `INSERT INTO runs(agent_id, job_id, kind, trigger, repo_url, target_id, snapshot_id, vm_restore)
+	if err := tx.QueryRow(ctx, `INSERT INTO runs(agent_id, job_id, kind, trigger, repo_url, target_id, snapshot_id, vm_restore)
 		VALUES($1,$2,'vm-restore','manual',$3,$4,$5,$6) RETURNING id`,
-		agentID, b.JobID, b.RepoURL, b.TargetID, b.SnapshotID, opts).Scan(&id)
-	return id, err
+		agentID, b.JobID, b.RepoURL, b.TargetID, b.SnapshotID, opts).Scan(&id); err != nil {
+		return 0, err
+	}
+	return id, tx.Commit(ctx)
 }
+
+// pveRestoreLock is the advisory lock that serialises Proxmox VE restores.
+const pveRestoreLock = 0x70766552 // "pveR"
 
 // Platform of the guests in a VM backup ("proxmox" for older backups).
 func (d *vmBackupDetails) Platform() string {

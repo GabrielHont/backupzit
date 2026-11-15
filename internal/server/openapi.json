@@ -2508,7 +2508,7 @@
       "post": {
         "operationId": "restoreRunVM",
         "summary": "Queue a restore of a virtual machine from a VM backup",
-        "description": "Unirea fork. Returns the created run (kind vm-restore). mode \"new\" creates a second VM next to the original (Hyper-V: new MAC addresses; name, if given, must not be taken on the host nor by a restore still queued or running there; Proxmox VE: the next free ID). \"replace\" is refused with 409: the agent can fall back to the VM name, so restores in place are done from the console web UI. The host must be connected now; a VM already being restored on it is refused.",
+        "description": "Unirea fork. Returns the created run (kind vm-restore). mode \"new\" creates a second VM next to the original (Hyper-V: new MAC addresses; name, if given, must not be taken on the host nor by a restore still queued or running there; Proxmox VE: the next free ID). \"replace\" is refused with 409: the agent can fall back to the VM name, so restores in place are done from the console web UI. agent_id can name another host of the same platform and storage a folder or storage it lists. The host must be connected now; a VM already being restored on it is refused.",
         "x-minimum-role": "restore",
         "responses": {
           "400": {
@@ -3537,7 +3537,30 @@
                   "type": "integer",
                   "format": "int64",
                   "description": "Bytes of the virtual disks."
+                },
+                "stored": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "Bytes of the blocks of its disks that carry data: what a restore writes, and at least what the restored disks take."
                 }
+              }
+            }
+          },
+          "vm_restore": {
+            "type": "object",
+            "description": "Unirea fork, vm-restore runs: how the VM is restored. new: a second VM, the original is not touched; otherwise in place or recreated.",
+            "properties": {
+              "vmid": {
+                "type": "integer"
+              },
+              "new": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              },
+              "storage": {
+                "type": "string"
               }
             }
           }
@@ -4505,6 +4528,13 @@
             "items": {
               "$ref": "#/components/schemas/Guest"
             }
+          },
+          "storage": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Where guest disks can go: Proxmox VE storages, Hyper-V folders (the host's default folder first)."
           }
         },
         "required": [
@@ -4801,7 +4831,11 @@
           "agent_id": {
             "type": "integer",
             "format": "int64",
-            "description": "Hypervisor host that restores the VM; 0 or absent means the host of the backup."
+            "description": "Hypervisor host that restores the VM: the host of the backup (0 or absent) or another host of the same platform, e.g. when the original host is lost."
+          },
+          "storage": {
+            "type": "string",
+            "description": "One of the host's storage entries: the folder for the virtual disks (Hyper-V; empty = the host's default folder) or the storage (Proxmox VE; empty = the original storage)."
           }
         }
       }

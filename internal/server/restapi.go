@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/max-zit/backupzit/internal/api"
 	"github.com/max-zit/backupzit/internal/imaging"
 	"github.com/max-zit/backupzit/internal/repo"
 )
@@ -291,6 +292,9 @@ type apiHypervisor struct {
 	Cluster  string     `json:"cluster,omitempty"` // Hyper-V failover cluster
 	Version  string     `json:"version,omitempty"`
 	Guests   []apiGuest `json:"guests"`
+	// Storage: where guest disks can go on this host (Proxmox VE storages,
+	// Hyper-V folders; for Hyper-V the host's default folder first).
+	Storage []string `json:"storage,omitempty"`
 }
 
 type apiGuest struct {
@@ -313,7 +317,7 @@ func toAPIHypervisor(a Agent) *apiHypervisor {
 	if inv == nil {
 		return nil
 	}
-	out := &apiHypervisor{Platform: a.Platform(), Node: inv.Node, Cluster: a.HVCluster(), Version: inv.Version, Guests: []apiGuest{}}
+	out := &apiHypervisor{Platform: a.Platform(), Node: inv.Node, Cluster: a.HVCluster(), Version: inv.Version, Guests: []apiGuest{}, Storage: inv.Storage}
 	for _, g := range a.LocalGuests() {
 		out.Guests = append(out.Guests, apiGuest{ID: strconv.Itoa(g.VMID), Name: g.Name, Type: g.Type, Status: g.Status,
 			DiskBytes: g.MaxDisk, MemoryBytes: g.MaxMem, Template: g.Template, Clustered: g.Clustered})
@@ -370,6 +374,9 @@ type apiRun struct {
 	Expired    bool            `json:"expired"`
 	// Guests of a VM backup run (Unirea portal: what can be restored).
 	Guests []apiVMGuest `json:"guests,omitempty"`
+	// VMRestore: how a vm-restore run restores (Unirea portal: what a failure
+	// may have touched).
+	VMRestore *apiRunVMRestore `json:"vm_restore,omitempty"`
 }
 
 func toAPIAgent(a Agent) apiAgent {
@@ -392,11 +399,24 @@ func toAPIJob(j Job) apiJob {
 	return x
 }
 
+// apiRunVMRestore: New is a second VM (the original is not touched);
+// otherwise the VM is restored in place or recreated.
+type apiRunVMRestore struct {
+	VMID    int    `json:"vmid"`
+	New     bool   `json:"new"`
+	Name    string `json:"name,omitempty"`
+	Storage string `json:"storage,omitempty"`
+}
+
 func toAPIRunJSON(r Run) apiRun {
-	return apiRun{ID: r.ID, Kind: r.Kind, Status: r.Status, Trigger: r.Trigger, AgentID: r.AgentID, Agent: r.Hostname,
+	x := apiRun{ID: r.ID, Kind: r.Kind, Status: r.Status, Trigger: r.Trigger, AgentID: r.AgentID, Agent: r.Hostname,
 		JobID: r.JobID, Job: deref(r.JobName), QueuedAt: r.QueuedAt, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt,
 		DurationS: int(r.Duration().Seconds()), Snapshot: r.SnapshotID, Message: r.Message, Errors: r.Errors,
 		Stats: r.Stats, Suspicious: r.Anomaly, Expired: r.Expired, Guests: runGuests(r)}
+	if o := vmRestoreOptions(r); r.Kind == api.KindVMRestore && o != nil {
+		x.VMRestore = &apiRunVMRestore{VMID: o.VMID, New: o.NewVMID != 0, Name: o.Name, Storage: o.Storage}
+	}
+	return x
 }
 
 func pathInt(r *http.Request, name string) (int64, error) {

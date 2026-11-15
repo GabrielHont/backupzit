@@ -44,6 +44,9 @@ type apiVMGuest struct {
 	Platform string `json:"platform"`
 	Disks    int    `json:"disks"`
 	Size     uint64 `json:"size"`
+	// Stored is the size of the blocks of its disks that carry data: what a
+	// restore writes, and at least what the restored disks take.
+	Stored uint64 `json:"stored,omitempty"`
 }
 
 // runGuests lists the guests of a VM backup run (nil for other runs).
@@ -58,7 +61,7 @@ func runGuests(r Run) []apiVMGuest {
 		if p == "" {
 			p = "proxmox"
 		}
-		out = append(out, apiVMGuest{VMID: g.VMID, Name: g.Name, Type: g.Type, Platform: p, Disks: g.Disks, Size: g.Size})
+		out = append(out, apiVMGuest{VMID: g.VMID, Name: g.Name, Type: g.Type, Platform: p, Disks: g.Disks, Size: g.Size, Stored: g.Stored})
 	}
 	return out
 }
@@ -66,6 +69,8 @@ func runGuests(r Run) []apiVMGuest {
 // registerAPIVM: a virtual machine brought back from a VM backup, for the
 // Unirea portal (the web UI has its own form).
 func (s *Server) registerAPIVM(mux *http.ServeMux) {
+	// agent_id picks the host (default: the host of the backup), also another
+	// host of the same platform, e.g. when the original host is lost.
 	// mode "new" creates a second VM next to the original (Hyper-V: new name
 	// and MAC addresses; Proxmox: the next free ID), started only on
 	// request. "replace" is refused here: the agent finds the VM to replace
@@ -93,11 +98,15 @@ func (s *Server) registerAPIVM(mux *http.ServeMux) {
 			Name    string `json:"name"`
 			Start   bool   `json:"start"`
 			AgentID int64  `json:"agent_id"`
+			// Storage: the folder of the virtual disks (Hyper-V) or the
+			// storage (Proxmox VE), one the host lists; "" = the host's default
+			// folder (Hyper-V) or the original storage (Proxmox VE).
+			Storage string `json:"storage"`
 		}
 		if err := readAPIJSON(r, &req); err != nil {
 			return nil, err
 		}
-		o := api.VMRestore{VMID: req.VMID, Name: strings.TrimSpace(req.Name), Start: req.Start}
+		o := api.VMRestore{VMID: req.VMID, Name: strings.TrimSpace(req.Name), Start: req.Start, Storage: strings.TrimSpace(req.Storage)}
 		switch req.Mode {
 		case "new":
 			o.NewVMID = -1

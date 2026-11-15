@@ -145,6 +145,16 @@ func TestAPIVirtualMachineRestore(t *testing.T) {
 	}
 	hv := enroll("HV9", "Windows Server 2025", `{"platform":"hyperv","node":"HV9","guests":[{"vmid":1000000009,"id":"guid-lab","name":"lab","type":"qemu","node":"HV9","status":"stopped"}],"storage":["D:\\VMs"]}`)
 	pc := enroll("pc", "Windows 11", "")
+	// A second Hyper-V host, e.g. the one a lost host's VMs come back on, and
+	// a Proxmox VE node.
+	hv2 := enroll("HV10", "Windows Server 2025", `{"platform":"hyperv","node":"HV10","guests":[{"vmid":1000000077,"id":"guid-db","name":"db","type":"qemu","node":"HV10","status":"running"}],"storage":["C:\\ProgramData\\Microsoft\\Windows\\Virtual Hard Disks","E:\\Hyper-V"]}`)
+	pve := enroll("pve1", "Linux", `{"node":"pve1","guests":[{"vmid":100,"name":"erp","type":"qemu","node":"pve1","status":"running"}],"storage":["local-lvm"]}`)
+	pve2 := enroll("pve2", "Linux", `{"node":"pve2","guests":[],"storage":["local-lvm"]}`)
+	// Hosts list where disks can go, the default folder first.
+	if code, body := apiJSONCall(t, e, view, "GET", fmt.Sprintf("/api/v1/agents/%d", hv2), ""); code != 200 ||
+		!strings.Contains(body, `"storage":["C:\\ProgramData\\Microsoft\\Windows\\Virtual Hard Disks","E:\\Hyper-V"]`) {
+		t.Fatalf("host storage: %d %s", code, body)
+	}
 	code, body := apiJSONCall(t, e, op, "POST", "/api/v1/jobs",
 		fmt.Sprintf(`{"kind":"vm","name":"VMs","agent_id":%d,"target_id":%d,"schedule":"0 1 * * *","paths":["1000000009"]}`, hv, target))
 	var job struct{ ID int64 }
@@ -160,7 +170,7 @@ func TestAPIVirtualMachineRestore(t *testing.T) {
 			t.Fatalf("claim backup: %v %+v", err, r)
 		}
 		res := api.RunResult{Status: status, SnapshotID: strings.Repeat("c3", 32),
-			Details: json.RawMessage(`{"guests":[{"vmid":1000000009,"type":"qemu","name":"lab","disks":1,"size":161061273600,"platform":"hyperv"},{"vmid":1000000010,"type":"qemu","name":"web","disks":1,"size":1024,"platform":"hyperv"}]}`)}
+			Details: json.RawMessage(`{"guests":[{"vmid":1000000009,"type":"qemu","name":"lab","disks":1,"size":161061273600,"stored":17977835520,"platform":"hyperv"},{"vmid":1000000010,"type":"qemu","name":"web","disks":1,"size":1024,"platform":"hyperv"}]}`)}
 		if status == api.StatusFailed {
 			res.SnapshotID, res.Message = "", "x"
 		}
@@ -174,7 +184,7 @@ func TestAPIVirtualMachineRestore(t *testing.T) {
 
 	// The run lists the VMs it holds.
 	code, body = apiJSONCall(t, e, view, "GET", fmt.Sprintf("/api/v1/runs/%d", run), "")
-	if code != 200 || !strings.Contains(body, `"guests":[{"vmid":1000000009,"name":"lab","type":"qemu","platform":"hyperv","disks":1,"size":161061273600},{"vmid":1000000010,"name":"web","type":"qemu","platform":"hyperv","disks":1,"size":1024}]`) {
+	if code != 200 || !strings.Contains(body, `"guests":[{"vmid":1000000009,"name":"lab","type":"qemu","platform":"hyperv","disks":1,"size":161061273600,"stored":17977835520},{"vmid":1000000010,"name":"web","type":"qemu","platform":"hyperv","disks":1,"size":1024}]`) {
 		t.Fatalf("run guests: %d %s", code, body)
 	}
 
@@ -250,6 +260,53 @@ func TestAPIVirtualMachineRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The run says how it restores: a new VM leaves the original alone.
+	if code, out := apiJSONCall(t, e, view, "GET", fmt.Sprintf("/api/v1/runs/%d", first.ID), ""); code != 200 ||
+		!strings.Contains(out, `"vm_restore":{"vmid":1000000009,"new":true,"name":"lab (refăcută 2026-11-15 12-30-05)"}`) {
+		t.Fatalf("restore run: %d %s", code, out)
+	}
+	// On another Hyper-V host, in the folder chosen there.
+	code, body = restore(op, run, `{"vmid":1000000009,"mode":"new","name":"lab (refăcută 2026-11-15 19-00-00)","agent_id":`+fmt.Sprint(hv2)+`,"storage":"E:\\Hyper-V"}`)
+	if code != 202 {
+		t.Fatalf("restore on another host: %d %s", code, body)
+	}
+	moved := queued(body)
+	if o := options(moved); moved.AgentID != hv2 || o.NewVMID != -1 || o.Storage != `E:\Hyper-V` || o.Start || o.Overwrite {
+		t.Fatalf("on another host: agent %d %+v", moved.AgentID, o)
+	}
+	if c, err := e.store.ClaimRun(e.ctx, hv2); err != nil || c == nil || c.ID != moved.ID {
+		t.Fatalf("claim restore on another host: %v %+v", err, c)
+	}
+	if err := e.store.FinishRun(e.ctx, hv2, moved.ID, api.RunResult{Status: api.StatusSuccess}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Proxmox VE: one restore at a time on all nodes (the next free ID is not
+	// reserved).
+	code, body = apiJSONCall(t, e, op, "POST", "/api/v1/jobs",
+		fmt.Sprintf(`{"kind":"vm","name":"PVE","agent_id":%d,"target_id":%d,"schedule":"0 1 * * *","paths":["100"]}`, pve, target))
+	var pveJob struct{ ID int64 }
+	if code != 201 || json.Unmarshal([]byte(body), &pveJob) != nil {
+		t.Fatalf("pve job: %d %s", code, body)
+	}
+	pb, err := e.store.QueueBackup(e.ctx, pveJob.ID, "manual")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, err := e.store.ClaimRun(e.ctx, pve); err != nil || r == nil || r.ID != pb {
+		t.Fatalf("claim pve backup: %v %+v", err, r)
+	}
+	if err := e.store.FinishRun(e.ctx, pve, pb, api.RunResult{Status: api.StatusSuccess, SnapshotID: strings.Repeat("d4", 32),
+		Details: json.RawMessage(`{"guests":[{"vmid":100,"type":"qemu","name":"erp","disks":1,"size":1024,"platform":"proxmox"}]}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := restore(op, pb, `{"vmid":100,"mode":"new","name":"erp-refacut-20261115-1805","storage":"local-lvm"}`); code != 202 {
+		t.Fatalf("pve restore: %d %s", code, out)
+	}
+	if code, out := restore(op, pb, `{"vmid":100,"mode":"new","name":"erp-2","agent_id":`+fmt.Sprint(pve2)+`}`); code != 409 || !strings.Contains(out, "one Proxmox VE restore at a time") {
+		t.Fatalf("second pve restore on another node: %d %s", code, out)
+	}
+
 	refused := []struct {
 		name  string
 		token string
@@ -268,6 +325,9 @@ func TestAPIVirtualMachineRestore(t *testing.T) {
 		{"unknown agent", op, run, `{"vmid":1000000009,"mode":"new","agent_id":999999}`, 400},
 		{"failed backup", op, failed, `{"vmid":1000000009,"mode":"new"}`, 409},
 		{"name of a VM on the host", op, run, `{"vmid":1000000009,"mode":"new","name":"LAB"}`, 409},
+		{"name of a VM on the other host", op, run, `{"vmid":1000000009,"mode":"new","name":"DB","agent_id":` + fmt.Sprint(hv2) + `}`, 409},
+		{"folder the host does not list", op, run, `{"vmid":1000000009,"mode":"new","name":"x","agent_id":` + fmt.Sprint(hv2) + `,"storage":"C:\\Windows"}`, 409},
+		{"Hyper-V backup on Proxmox VE", op, run, `{"vmid":1000000009,"mode":"new","name":"x","agent_id":` + fmt.Sprint(pve) + `}`, 409},
 	}
 	for _, x := range refused {
 		if code, out := restore(x.token, x.run, x.req); code != x.code {
