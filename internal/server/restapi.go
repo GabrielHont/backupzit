@@ -582,6 +582,7 @@ func (s *Server) registerAPI(mux *http.ServeMux) {
 	s.registerAPIDocs(mux)
 	s.registerAPIAgentPackages(mux)
 	s.registerAPIAgentMutations(mux)
+	s.registerAPIPurge(mux)
 }
 
 // ---- token management pages (My account)
