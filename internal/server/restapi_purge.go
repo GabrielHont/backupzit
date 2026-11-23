@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/max-zit/backupzit/internal/backend"
 )
 
 const purgeSetting = "unirea.purge.v2"
@@ -27,6 +29,9 @@ const purgeConfirm = "delete every backup in this console"
 // purgeSecondPass is how long the deletion waits before going over every repository again, when backups
 // were running at the start: a backup already started keeps writing until its agent gives up.
 var purgeSecondPass = 15 * time.Minute
+
+// purgeLastPass is the last pass, for long backups that were running.
+var purgeLastPass = 3 * time.Hour
 
 type purgeRepo struct {
 	TargetID int64  `json:"target_id"`
@@ -184,26 +189,37 @@ func (s *Server) preparePurge(ctx context.Context, prev purgeState, by string) (
 	if err := s.store.SetSetting(ctx, purgeSetting, st); err != nil {
 		return purgeState{}, err
 	}
-	// Agents enrolled while this runs are caught by the next round.
+	n, err := s.deleteAllAgents(ctx)
+	if err != nil {
+		return purgeState{}, err
+	}
+	st.Agents = n
+	return st, s.store.SetSetting(ctx, purgeSetting, st)
+}
+
+// deleteAllAgents removes every agent and enrollment code; agents enrolled meanwhile are caught by the
+// next round. Also run when a deletion resumes after a restart, in case the console stopped half-way.
+func (s *Server) deleteAllAgents(ctx context.Context) (int, error) {
+	n := 0
 	for round := 0; round < 3; round++ {
 		if _, err := s.store.db.Exec(ctx, `DELETE FROM enrollment_tokens`); err != nil {
-			return purgeState{}, err
+			return n, err
 		}
 		agents, err := s.store.allAgents(ctx)
 		if err != nil {
-			return purgeState{}, err
+			return n, err
 		}
 		if len(agents) == 0 {
 			break
 		}
 		for _, a := range agents {
 			if err := s.store.DeleteAgent(ctx, a.ID); err != nil {
-				return purgeState{}, err
+				return n, err
 			}
-			st.Agents++
+			n++
 		}
 	}
-	return st, s.store.SetSetting(ctx, purgeSetting, st)
+	return n, nil
 }
 
 // runPurge deletes the repositories in the background and records each outcome.
@@ -231,16 +247,30 @@ func (s *Server) runPurge(st purgeState, remote string) {
 		}
 		ok := pass()
 		if st.Running > 0 {
-			// A backup that was running may still write; go over everything once more.
-			select {
-			case <-time.After(purgeSecondPass):
-			case <-ctx.Done():
+			// A backup that was running may still write until its agent gives up: go over everything again
+			// after 15 minutes and after 3 hours.
+			for _, wait := range []time.Duration{purgeSecondPass, purgeLastPass} {
+				select {
+				case <-time.After(wait):
+				case <-ctx.Done():
+				}
+				for i := range st.Repos {
+					st.Repos[i].Done = false
+					st.Repos[i].OK = false
+				}
+				ok = pass()
 			}
-			for i := range st.Repos {
-				st.Repos[i].Done = false
-				st.Repos[i].OK = false
+		}
+		// Nothing may be left: a repository that has files again is reported, not counted as deleted.
+		for i := range st.Repos {
+			x := &st.Repos[i]
+			if !x.OK {
+				continue
 			}
-			ok = pass()
+			if left := s.purgeLeft(ctx, *x); left != "" {
+				x.OK, x.Result = false, left
+				ok = false
+			}
 		}
 		now := time.Now().UTC()
 		st.FinishedAt, st.OK = &now, ok
@@ -269,6 +299,33 @@ func (s *Server) purgeRepo(ctx context.Context, x purgeRepo) (string, bool) {
 	return detail, true
 }
 
+// purgeLeft lists a deleted repository again; it describes what is still there ("" when empty).
+func (s *Server) purgeLeft(ctx context.Context, x purgeRepo) string {
+	t, err := s.store.GetTarget(ctx, x.TargetID)
+	if err != nil {
+		return "not confirmed: the storage target was removed from the console"
+	}
+	be, err := backend.Open(ctx, x.URL, backend.Options{
+		SFTPPassword: t.SFTPPassword, SFTPHostKey: t.SFTPHostKey,
+		S3AccessKey: t.S3AccessKey, S3SecretKey: t.S3SecretKey, S3Region: t.S3Region, S3LockDays: t.S3LockDays,
+		SMBPassword: t.SMBPassword, SMBDomain: t.SMBDomain,
+		HardenedKey: t.HardenedKey, HardenedFingerprint: t.HardenedFingerprint,
+		AzureKey: t.AzureKey, AzureSAS: t.AzureSAS,
+	})
+	if err != nil {
+		return "not confirmed: " + err.Error()
+	}
+	defer be.Close()
+	names, err := be.List(ctx, "")
+	if err != nil {
+		return "not confirmed: " + err.Error()
+	}
+	if len(names) > 0 {
+		return fmt.Sprintf("not deleted: %d files are there again (a backup kept writing)", len(names))
+	}
+	return ""
+}
+
 // StartPurgeResume finishes, after a restart, a deletion of every backup that the console had begun.
 func (s *Server) StartPurgeResume(ctx context.Context) {
 	var st purgeState
@@ -279,5 +336,11 @@ func (s *Server) StartPurgeResume(ctx context.Context) {
 		return
 	}
 	s.log.Info("resuming the deletion of every backup", "repositories", len(st.Repos))
+	// The console may have stopped before every agent was deleted.
+	if n, err := s.deleteAllAgents(ctx); err != nil {
+		s.log.Error("resume purge: agents", "err", err)
+	} else {
+		st.Agents += n
+	}
 	s.runPurge(st, "")
 }
