@@ -266,6 +266,7 @@ func run() error {
 	srv.StartUpdates(ctx, *dataDir)
 	srv.StartConsoleBackup(ctx, *dataDir)
 	srv.StartAuditChain(ctx, *dataDir)
+	srv.StartPurgeResume(ctx)
 	sched := server.NewScheduler(store, log)
 	sched.Notifier = srv.Notifier
 	go sched.Run(ctx)

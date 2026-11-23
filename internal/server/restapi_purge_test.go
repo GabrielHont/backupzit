@@ -37,10 +37,11 @@ func TestAPIPurgeDeletesEveryBackup(t *testing.T) {
 		State   struct {
 			FinishedAt *time.Time `json:"finished_at"`
 			OK         bool       `json:"ok"`
-			Results    []struct {
+			Repos      []struct {
 				OK     bool   `json:"ok"`
+				Done   bool   `json:"done"`
 				Result string `json:"result"`
-			} `json:"results"`
+			} `json:"repositories"`
 		} `json:"state"`
 	}
 	for i := 0; i < 100; i++ {
@@ -50,7 +51,7 @@ func TestAPIPurgeDeletesEveryBackup(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	if !st.State.OK || len(st.State.Results) != 1 || !st.State.Results[0].OK {
+	if !st.State.OK || len(st.State.Repos) != 1 || !st.State.Repos[0].OK || !st.State.Repos[0].Done {
 		t.Fatalf("purge outcome: %s", b)
 	}
 	x.waitSnapshots(t, -1)
@@ -58,8 +59,8 @@ func TestAPIPurgeDeletesEveryBackup(t *testing.T) {
 	if code, b := apiJSONCall(t, x.e, admin, "GET", "/api/v1/enrollment-tokens", ""); code != 200 || strings.TrimSpace(b) != "[]" {
 		t.Fatalf("enrollment tokens left: %d %s", code, b)
 	}
-	// Running it again on an empty console is harmless.
-	if code, b := apiJSONCall(t, x.e, admin, "POST", "/api/v1/purge", `{"confirm":"delete every backup in this console"}`); code != 202 || !strings.Contains(b, `"agents":0`) {
+	// Running it again on an empty console is harmless: nothing left to delete, and it says so.
+	if code, b := apiJSONCall(t, x.e, admin, "POST", "/api/v1/purge", `{"confirm":"delete every backup in this console"}`); code != 202 || !strings.Contains(b, `"agents":0`) || !strings.Contains(b, `"repositories":0`) {
 		t.Fatalf("second purge: %d %s", code, b)
 	}
 }

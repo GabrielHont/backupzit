@@ -2,41 +2,95 @@ package server
 
 // Unirea: deleting every backup of a console. Unirea Cloud runs one console per firm; when a firm's data
 // is deleted (it stopped paying, 14 + 45 days later), the portal empties its console through this route:
-// every agent, current or removed, is deleted together with its repositories on the console's storage.
+// every agent, current or removed, is deleted, and then every repository the console ever wrote to.
 // The software on the firm's computers is not touched (no uninstall): its enrollment simply stops working.
+//
+// The list of repositories is written to the settings before anything is deleted, so a restart of the
+// console resumes the deletion (StartPurgeResume) instead of forgetting what was left.
 
 import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 )
 
-const purgeSetting = "unirea.purge"
+const purgeSetting = "unirea.purge.v2"
 
 // purgeConfirm must be sent verbatim, so the route cannot be called by mistake.
 const purgeConfirm = "delete every backup in this console"
 
+// purgeSecondPass is how long the deletion waits before going over every repository again, when backups
+// were running at the start: a backup already started keeps writing until its agent gives up.
+var purgeSecondPass = 15 * time.Minute
+
 type purgeRepo struct {
-	Agent  string `json:"agent"`
-	Target string `json:"target"`
-	URL    string `json:"url"`
-	Result string `json:"result"`
-	OK     bool   `json:"ok"`
+	TargetID int64  `json:"target_id"`
+	Target   string `json:"target"`
+	Kind     string `json:"kind"`
+	URL      string `json:"url"`
+	Agents   string `json:"agents"`
+	Result   string `json:"result,omitempty"`
+	OK       bool   `json:"ok"`
+	Done     bool   `json:"done"`
 }
 
-// purgeState is kept in settings, so the portal can read the outcome after a restart.
+// purgeState is kept in settings, so the outcome survives a restart and the portal can read it.
 type purgeState struct {
-	StartedAt    time.Time   `json:"started_at"`
-	FinishedAt   *time.Time  `json:"finished_at,omitempty"`
-	By           string      `json:"by"`
-	Agents       int         `json:"agents"`
-	Repositories int         `json:"repositories"`
-	Results      []purgeRepo `json:"results"`
-	// Done and every repository deleted.
+	StartedAt  time.Time   `json:"started_at"`
+	FinishedAt *time.Time  `json:"finished_at,omitempty"`
+	By         string      `json:"by"`
+	Agents     int         `json:"agents"`
+	Running    int         `json:"running_at_start"`
+	Repos      []purgeRepo `json:"repositories"`
+	// Done, and every repository confirmed deleted.
 	OK bool `json:"ok"`
+}
+
+// purger makes sure one deletion runs at a time in this console.
+type purger struct {
+	mu      sync.Mutex
+	running bool
+}
+
+var consolePurger purger
+
+func (p *purger) start() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.running {
+		return false
+	}
+	p.running = true
+	return true
+}
+
+func (p *purger) stop() {
+	p.mu.Lock()
+	p.running = false
+	p.mu.Unlock()
+}
+
+// purgeInventory lists every repository the console wrote to: backups and copies of every agent, also
+// removed ones, also on storage targets deleted since (those cannot be reached any more and are reported).
+func (s *Store) purgeInventory(ctx context.Context) ([]purgeRepo, error) {
+	rows, err := s.db.Query(ctx, `SELECT COALESCE(r.target_id,0), COALESCE(t.name,''), COALESCE(t.kind,''), r.repo_url,
+			string_agg(DISTINCT COALESCE(a.hostname,'?'), ', ')
+		FROM runs r LEFT JOIN storage_targets t ON t.id=r.target_id LEFT JOIN agents a ON a.id=r.agent_id
+		WHERE r.repo_url<>''
+		GROUP BY 1,2,3,4 ORDER BY 2,4`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (purgeRepo, error) {
+		var x purgeRepo
+		err := r.Scan(&x.TargetID, &x.Target, &x.Kind, &x.URL, &x.Agents)
+		return x, err
+	})
 }
 
 // allAgents lists every agent, also the removed ones kept as history of their backups.
@@ -69,76 +123,161 @@ func (s *Server) registerAPIPurge(mux *http.ServeMux) {
 		if q.Confirm != purgeConfirm {
 			return nil, apiErr(http.StatusBadRequest, "confirm must be %q", purgeConfirm)
 		}
-		if held, err := s.approvalForChange(r, "console.purge", 0, "all backups", q); err != nil {
-			return nil, mutationAPIError(err, true)
-		} else if held {
-			return nil, mutationAPIError(errApprovalPending, true)
-		}
 		ctx := r.Context()
+		// Four-eyes approval cannot carry this out later; with it on, an administrator deletes in the console.
+		if s.store.fourEyes(ctx) {
+			return nil, apiErr(http.StatusConflict, "four-eyes approval is on: remove the agents with their backups in the console")
+		}
+		if !consolePurger.start() {
+			return nil, apiErr(http.StatusConflict, "a deletion of every backup is already running")
+		}
+		started := false
+		defer func() {
+			if !started {
+				consolePurger.stop()
+			}
+		}()
 		var prev purgeState
 		if err := s.store.GetSetting(ctx, purgeSetting, &prev); err != nil {
 			return nil, err
-		}
-		if !prev.StartedAt.IsZero() && prev.FinishedAt == nil && time.Since(prev.StartedAt) < 13*time.Hour {
-			return nil, apiErr(http.StatusConflict, "a purge is already running since %s", prev.StartedAt.Format(time.RFC3339))
 		}
 		by := currentUser(r).Username
 		if actor, ok := ctx.Value(apiActorKey).(string); ok {
 			by = actor
 		}
-		agents, err := s.store.allAgents(ctx)
+		st, err := s.preparePurge(ctx, prev, by)
 		if err != nil {
 			return nil, err
 		}
-		type work struct {
-			agent Agent
-			repos []agentRepo
-		}
-		var todo []work
-		repos := 0
-		for _, a := range agents {
-			x, err := s.store.agentRepos(ctx, a.ID)
-			if err != nil {
-				return nil, err
-			}
-			todo = append(todo, work{a, x})
-			repos += len(x)
-		}
-		// The agents go first, in the request: none can sign in or start a backup again while the
-		// repositories are deleted. Their jobs, runs and pending removals go with them (ON DELETE CASCADE).
-		for _, w := range todo {
-			if err := s.store.DeleteAgent(ctx, w.agent.ID); err != nil {
-				return nil, err
-			}
-		}
-		_, _ = s.store.db.Exec(ctx, `DELETE FROM enrollment_tokens`)
-		st := purgeState{StartedAt: time.Now().UTC(), By: by, Agents: len(todo), Repositories: repos, Results: []purgeRepo{}}
-		if err := s.store.SetSetting(ctx, purgeSetting, st); err != nil {
-			return nil, err
-		}
-		s.audit(r, "console.purge", "%d agents, %d repositories: every backup is being deleted", len(todo), repos)
-		remote := s.guard.ClientIP(r)
-		s.cleanups.Add(1)
-		go func() { // #nosec G118 -- background work that outlives the request on purpose
-			defer s.cleanups.Done()
-			cctx, cancel := context.WithTimeout(context.Background(), 12*time.Hour)
-			defer cancel()
-			ok := true
-			for _, w := range todo {
-				for _, x := range w.repos {
-					detail, _ := s.cleanupRepo(cctx, x, removeAllBackups)
-					done := len(detail) >= len("repository deleted") && detail[:len("repository deleted")] == "repository deleted"
-					ok = ok && done
-					st.Results = append(st.Results, purgeRepo{Agent: w.agent.Hostname, Target: x.TargetName, URL: x.URL, Result: detail, OK: done})
-					_ = s.store.SetSetting(cctx, purgeSetting, st)
-					_, _ = s.store.AppendAudit(cctx, by, "agent.backups", fmt.Sprintf("%s, %s on %s: %s", w.agent.Hostname, x.URL, x.TargetName, detail), remote)
-				}
-			}
-			now := time.Now().UTC()
-			st.FinishedAt, st.OK = &now, ok
-			_ = s.store.SetSetting(cctx, purgeSetting, st)
-			s.log.Info("console purge finished", "agents", len(todo), "repositories", repos, "ok", ok)
-		}()
-		return map[string]any{"started": true, "agents": len(todo), "repositories": repos}, nil
+		s.audit(r, "console.purge", "%d agents, %d repositories: every backup is being deleted", st.Agents, len(st.Repos))
+		started = true
+		s.runPurge(st, s.guard.ClientIP(r))
+		return map[string]any{"started": true, "agents": st.Agents, "repositories": len(st.Repos)}, nil
 	}))
+}
+
+// preparePurge writes down every repository, then deletes the agents (none can sign in, start a backup or
+// be enrolled again) and keeps what an unfinished earlier deletion had still to do.
+func (s *Server) preparePurge(ctx context.Context, prev purgeState, by string) (purgeState, error) {
+	repos, err := s.store.purgeInventory(ctx)
+	if err != nil {
+		return purgeState{}, err
+	}
+	known := map[string]bool{}
+	for _, x := range repos {
+		known[x.URL] = true
+	}
+	// An earlier deletion that did not finish (the console restarted): its repositories are done again;
+	// their runs are gone, so only the manifest still knows them.
+	for _, x := range prev.Repos {
+		if !known[x.URL] && !(x.Done && x.OK) {
+			x.Done, x.OK, x.Result = false, false, ""
+			repos = append(repos, x)
+			known[x.URL] = true
+		}
+	}
+	var running int
+	if err := s.store.db.QueryRow(ctx, `SELECT count(*) FROM runs WHERE status IN ('running','stopping')`).Scan(&running); err != nil {
+		return purgeState{}, err
+	}
+	st := purgeState{StartedAt: time.Now().UTC(), By: by, Running: running, Repos: repos}
+	if err := s.store.SetSetting(ctx, purgeSetting, st); err != nil {
+		return purgeState{}, err
+	}
+	// Agents enrolled while this runs are caught by the next round.
+	for round := 0; round < 3; round++ {
+		if _, err := s.store.db.Exec(ctx, `DELETE FROM enrollment_tokens`); err != nil {
+			return purgeState{}, err
+		}
+		agents, err := s.store.allAgents(ctx)
+		if err != nil {
+			return purgeState{}, err
+		}
+		if len(agents) == 0 {
+			break
+		}
+		for _, a := range agents {
+			if err := s.store.DeleteAgent(ctx, a.ID); err != nil {
+				return purgeState{}, err
+			}
+			st.Agents++
+		}
+	}
+	return st, s.store.SetSetting(ctx, purgeSetting, st)
+}
+
+// runPurge deletes the repositories in the background and records each outcome.
+func (s *Server) runPurge(st purgeState, remote string) {
+	s.cleanups.Add(1)
+	go func() { // #nosec G118 -- background work that outlives the request on purpose
+		defer s.cleanups.Done()
+		defer consolePurger.stop()
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Hour)
+		defer cancel()
+		pass := func() bool {
+			ok := true
+			for i := range st.Repos {
+				x := &st.Repos[i]
+				if x.Done && x.OK {
+					continue
+				}
+				x.Result, x.OK = s.purgeRepo(ctx, *x)
+				x.Done = true
+				ok = ok && x.OK
+				_ = s.store.SetSetting(ctx, purgeSetting, st)
+				_, _ = s.store.AppendAudit(ctx, st.By, "agent.backups", fmt.Sprintf("%s, %s on %s: %s", x.Agents, x.URL, x.Target, x.Result), remote)
+			}
+			return ok
+		}
+		ok := pass()
+		if st.Running > 0 {
+			// A backup that was running may still write; go over everything once more.
+			select {
+			case <-time.After(purgeSecondPass):
+			case <-ctx.Done():
+			}
+			for i := range st.Repos {
+				st.Repos[i].Done = false
+				st.Repos[i].OK = false
+			}
+			ok = pass()
+		}
+		now := time.Now().UTC()
+		st.FinishedAt, st.OK = &now, ok
+		_ = s.store.SetSetting(ctx, purgeSetting, st)
+		s.log.Info("console purge finished", "agents", st.Agents, "repositories", len(st.Repos), "ok", ok)
+	}()
+}
+
+// purgeRepo deletes one repository. It counts as deleted only when nothing is left and the storage cannot
+// keep hidden versions of it (Object Lock, hardened storage): those are reported, not hidden.
+func (s *Server) purgeRepo(ctx context.Context, x purgeRepo) (string, bool) {
+	if x.TargetID == 0 || x.Target == "" {
+		return "not deleted: the storage target was removed from the console", false
+	}
+	t, err := s.store.GetTarget(ctx, x.TargetID)
+	if err != nil {
+		return "not deleted: the storage target was removed from the console", false
+	}
+	detail, _ := s.cleanupRepo(ctx, agentRepo{TargetID: x.TargetID, TargetName: x.Target, TargetKind: x.Kind, URL: x.URL}, removeAllBackups)
+	if !strings.HasPrefix(detail, "repository deleted") {
+		return detail, false
+	}
+	if t.S3LockDays > 0 || t.HardenedKey != "" || t.Kind == "hardened" {
+		return detail + "; the storage keeps locked or hidden versions until they expire", false
+	}
+	return detail, true
+}
+
+// StartPurgeResume finishes, after a restart, a deletion of every backup that the console had begun.
+func (s *Server) StartPurgeResume(ctx context.Context) {
+	var st purgeState
+	if err := s.store.GetSetting(ctx, purgeSetting, &st); err != nil || st.StartedAt.IsZero() || st.FinishedAt != nil {
+		return
+	}
+	if !consolePurger.start() {
+		return
+	}
+	s.log.Info("resuming the deletion of every backup", "repositories", len(st.Repos))
+	s.runPurge(st, "")
 }
