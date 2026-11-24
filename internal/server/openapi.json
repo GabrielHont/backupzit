@@ -4024,6 +4024,41 @@
             "format": "int64",
             "minimum": 0,
             "description": "null is unlimited; zero prevents new enrollment. Counts all non-removed agents, including recovery media. Reducing the limit does not remove existing agents."
+          },
+          "storage": {
+            "type": "object",
+            "description": "Unirea: the firm's backup space as the portal measured it; optional in a PUT, absent until sent. While usedBytes >= limitBytes, backup runs end at once as failed with a message starting \"backup storage is full\"; restores and other runs go on. An older measuredAt never replaces a newer one.",
+            "properties": {
+              "limitBytes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "format": "int64",
+                "minimum": 1,
+                "description": "null is unlimited."
+              },
+              "usedBytes": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "measuredAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "full": {
+                "type": "boolean",
+                "readOnly": true,
+                "description": "Whether new backups are refused now; ignored in a PUT."
+              }
+            },
+            "required": [
+              "limitBytes",
+              "usedBytes",
+              "measuredAt"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

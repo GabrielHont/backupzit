@@ -108,6 +108,34 @@ func (s *Server) handlePoll(w http.ResponseWriter, r *http.Request) {
 	}
 	if free {
 		run, err := s.store.claimRunIdle(r.Context(), a.ID, held, !req.Busy)
+		// Unirea: while the firm's backup space is full, runs that write
+		// backups end at once and the agent gets the next queued run (a
+		// restore, for example) in the same poll (storagelimit.go).
+		// The refusal's own writes outlive the agent's request: a run claimed
+		// here must end failed or go back to the queue even if it disconnects.
+		keep := context.WithoutCancel(r.Context())
+		for refused := 0; err == nil && run != nil; refused++ {
+			msg := s.backupRefused(r.Context(), run)
+			if msg == "" {
+				break
+			}
+			if refused == 50 { // the rest at the next poll
+				err = s.store.requeueRun(keep, run.ID)
+				run = nil
+				break
+			}
+			if err = s.store.FinishRun(keep, a.ID, run.ID, api.RunResult{Status: api.StatusFailed, Message: msg}); err != nil {
+				// Never leave it running without an agent: back in the queue.
+				if qerr := s.store.requeueRun(keep, run.ID); qerr != nil {
+					s.log.Error("requeue refused run", "run", run.ID, "err", qerr)
+				}
+				run = nil
+				break
+			}
+			s.log.Info("backup refused: storage full", "run", run.ID, "kind", run.Kind, "agent", a.Hostname)
+			s.chainAfterRun(keep, run.ID) // jobs that follow it after any result
+			run, err = s.store.claimRunIdle(r.Context(), a.ID, held, !req.Busy)
+		}
 		if err != nil {
 			s.log.Error("claim run", "err", err)
 			writeAPIError(w, http.StatusInternalServerError, "database error")

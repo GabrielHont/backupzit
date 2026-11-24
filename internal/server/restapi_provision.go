@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -158,17 +159,63 @@ func (s *Server) registerAPIProvision(mux *http.ServeMux) {
 		if err := readAPIJSON(r, &req); err != nil {
 			return nil, err
 		}
-		if len(req) != 1 || req["maxAgents"] == nil {
-			return nil, apiErr(400, "provide maxAgents (integer or null)")
+		// maxAgents always; storage (Unirea: the firm's backup space) when the
+		// portal sends a measurement with it.
+		_, hasStorage := req["storage"]
+		if req["maxAgents"] == nil || len(req) > 2 || (len(req) == 2 && !hasStorage) {
+			return nil, apiErr(400, "provide maxAgents (integer or null) and optionally storage")
 		}
 		var l ConsoleLimits
 		if err := json.Unmarshal(req["maxAgents"], &l.MaxAgents); err != nil || (l.MaxAgents != nil && *l.MaxAgents < 0) {
 			return nil, apiErr(400, "maxAgents must be non-negative or null (unlimited)")
 		}
+		var storage StorageLimit
+		if hasStorage {
+			dec := json.NewDecoder(bytes.NewReader(req["storage"]))
+			dec.DisallowUnknownFields()
+			// Every field is required: a missing limit must not read as unlimited.
+			var keys map[string]json.RawMessage
+			if json.Unmarshal(req["storage"], &keys) != nil || keys["limitBytes"] == nil || keys["usedBytes"] == nil || keys["measuredAt"] == nil {
+				return nil, apiErr(400, "storage must be {limitBytes, usedBytes, measuredAt}")
+			}
+			var in struct {
+				LimitBytes *int64    `json:"limitBytes"`
+				UsedBytes  *int64    `json:"usedBytes"`
+				MeasuredAt time.Time `json:"measuredAt"`
+				Full       *bool     `json:"full"` // read only: ignored
+			}
+			if err := dec.Decode(&in); err != nil || in.UsedBytes == nil {
+				return nil, apiErr(400, "storage must be {limitBytes, usedBytes, measuredAt}")
+			}
+			storage = StorageLimit{LimitBytes: in.LimitBytes, UsedBytes: *in.UsedBytes, MeasuredAt: in.MeasuredAt}
+			if err := storage.valid(); err != nil {
+				return nil, apiErr(400, "%s", err.Error())
+			}
+		}
+		before, _ := s.store.consoleLimits(r.Context())
 		if err := s.store.setConsoleLimits(r.Context(), l); err != nil {
 			return nil, err
 		}
-		s.audit(r, "limits.update", "maxAgents=%s", req["maxAgents"])
-		return l, nil
+		// The portal sends the limits with every measurement: only changes go to the audit log.
+		if !sameLimit(before.MaxAgents, l.MaxAgents) {
+			s.audit(r, "limits.update", "maxAgents=%s", req["maxAgents"])
+		}
+		if hasStorage {
+			if err := s.store.setStorageLimit(r.Context(), storage); err != nil {
+				return nil, err
+			}
+			after, err := s.store.storageLimit(r.Context())
+			if err != nil {
+				return nil, err
+			}
+			if after != nil && (before.Storage == nil || before.Storage.Full != after.Full) {
+				s.audit(r, "limits.storage", "full=%t used=%d limit=%s", after.Full, after.UsedBytes, req["storage"])
+			}
+		}
+		return s.store.consoleLimits(r.Context())
 	}))
+}
+
+func sameLimit(a, b *int64) bool {
+	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
 }

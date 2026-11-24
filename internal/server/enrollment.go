@@ -22,6 +22,9 @@ type EnrollmentToken struct {
 
 type ConsoleLimits struct {
 	MaxAgents *int64 `json:"maxAgents"`
+	// Storage is the firm's backup space (Unirea, storagelimit.go); absent
+	// until the portal sends a measurement.
+	Storage *StorageLimit `json:"storage,omitempty"`
 }
 
 func (s *Store) createEnrollmentToken(ctx context.Context, ttl time.Duration, maxUses *int64, label string) (EnrollmentToken, string, error) {
@@ -69,6 +72,10 @@ func (s *Store) consoleLimits(ctx context.Context) (ConsoleLimits, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ConsoleLimits{}, nil
 	}
+	if err != nil {
+		return l, err
+	}
+	l.Storage, err = s.storageLimit(ctx)
 	return l, err
 }
 
